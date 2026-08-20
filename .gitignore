@@ -1,0 +1,25 @@
+# Nutzerdaten: PDFs können urheberrechtlich geschützt sein, Audio ist groß.
+/data/*
+!/data/.gitkeep
+
+# Piper-Stimmmodelle sind mehrere hundert MB groß und gehören nicht ins Repo.
+/voices/*
+!/voices/.gitkeep
+
+# Node
+node_modules/
+frontend/dist/
+*.local
+
+# Go
+/backend/server
+/backend/server.exe
+/backend/theater-tts
+/backend/theater-tts.exe
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
