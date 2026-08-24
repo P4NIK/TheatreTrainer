@@ -1,6 +1,7 @@
 package synth
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,4 +63,85 @@ func TestWriteAndReadWAVRoundTrip(t *testing.T) {
 			t.Fatalf("sample %d = %d, want %d", i, seg.samples[i], samples[i])
 		}
 	}
+}
+
+// TestTimeStretchKeepsPitch checks the WSOLA stretcher on its own: the length
+// must change by the given factor while the frequency stays put.
+func TestTimeStretchKeepsPitch(t *testing.T) {
+	const rate = 22050
+	for _, s := range []float64{0.8, 1.2, 1.4} {
+		in := sine(rate, 180, rate) // one second at 180 Hz
+		out := timeStretch(in, rate, s)
+
+		want := int(float64(len(in)) * s)
+		if rel := math.Abs(float64(len(out)-want)) / float64(want); rel > 0.02 {
+			t.Errorf("Faktor %.1f: %d Samples, erwartet %d", s, len(out), want)
+		}
+		if got := dominantFreq(out, rate); math.Abs(got-180)/180 > 0.02 {
+			t.Errorf("Faktor %.1f: Frequenz %.1f Hz, erwartet 180 Hz", s, got)
+		}
+	}
+}
+
+// TestPitchShiftMovesPitchNotDuration is the regression test for the pitch
+// setting: the frequency must move by exactly the chosen factor, and the
+// duration must not move at all.
+func TestPitchShiftMovesPitchNotDuration(t *testing.T) {
+	const (
+		rate = 22050
+		freq = 110.0 // a low male fundamental
+	)
+	for _, pitch := range []float64{0.85, 1.0, 1.15, 1.25} {
+		in := sine(rate, freq, rate)
+		out := pitchShift(in, rate, pitch)
+
+		if rel := math.Abs(float64(len(out)-len(in))) / float64(len(in)); rel > 0.03 {
+			t.Errorf("pitch %.2f: Dauer um %.1f %% verändert, erwartet unverändert", pitch, rel*100)
+		}
+		got, want := dominantFreq(out, rate), freq*pitch
+		if rel := math.Abs(got-want) / want; rel > 0.02 {
+			t.Errorf("pitch %.2f: Grundfrequenz %.1f Hz, erwartet %.1f Hz (%.1f %% daneben)",
+				pitch, got, want, rel*100)
+		}
+	}
+}
+
+func sine(rate int, freq float64, n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = int(math.Round(9000 * math.Sin(2*math.Pi*freq*float64(i)/float64(rate))))
+	}
+	return out
+}
+
+// dominantFreq finds the strongest frequency via the autocorrelation peak.
+func dominantFreq(samples []int, rate int) float64 {
+	n := 4096
+	if len(samples) < n {
+		n = len(samples)
+	}
+	x := make([]float64, n)
+	var mean float64
+	for i := 0; i < n; i++ {
+		mean += float64(samples[i])
+	}
+	mean /= float64(n)
+	for i := 0; i < n; i++ {
+		x[i] = float64(samples[i]) - mean
+	}
+
+	best, bestLag := 0.0, 0
+	for lag := rate / 400; lag < rate/60 && lag < n; lag++ {
+		var sum float64
+		for i := 0; i+lag < n; i++ {
+			sum += x[i] * x[i+lag]
+		}
+		if sum > best {
+			best, bestLag = sum, lag
+		}
+	}
+	if bestLag == 0 {
+		return 0
+	}
+	return float64(rate) / float64(bestLag)
 }

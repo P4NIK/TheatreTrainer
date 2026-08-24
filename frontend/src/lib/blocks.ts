@@ -30,12 +30,20 @@ export function speakerNames(blocks: Block[]): string[] {
   return [...set].sort((a, b) => a.localeCompare(b, 'de'))
 }
 
+/**
+ * Default pitches for new speakers. German Piper voices are few and only
+ * thorsten is really good, so roles are told apart by pitch rather than by
+ * model: every new speaker starts on a different one.
+ */
+const PITCHES = [1.0, 0.88, 1.12, 0.94, 1.2, 0.82, 1.06, 0.98]
+
 export function defaultSpeakerConfig(index: number): SpeakerConfig {
   return {
     model: '',
     speakerId: 0,
     lengthScale: 1,
     volume: 1,
+    pitch: PITCHES[index % PITCHES.length],
     color: PALETTE[index % PALETTE.length],
   }
 }
@@ -49,7 +57,7 @@ export function syncSpeakers(blocks: Block[], speakers: Speakers): Speakers {
   let changed = false
 
   if (!next[DIRECTION_KEY]) {
-    next[DIRECTION_KEY] = { model: '', speakerId: 0, lengthScale: 1.15, volume: 0.7, color: '#868e96' }
+    next[DIRECTION_KEY] = { model: '', speakerId: 0, lengthScale: 1.15, volume: 0.7, pitch: 1, color: '#868e96' }
     changed = true
   }
   const names = speakerNames(blocks)

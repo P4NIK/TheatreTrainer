@@ -38,6 +38,8 @@ export interface SpeakerConfig {
   speakerId: number
   lengthScale: number
   volume: number
+  /** Shifts the voice up or down without changing the tempo. 1 = unchanged. */
+  pitch: number
   color: string
 }
 

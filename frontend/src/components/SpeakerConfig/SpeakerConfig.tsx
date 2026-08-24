@@ -63,6 +63,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
       speakerId: 0,
       lengthScale: 1,
       volume: 1,
+      pitch: 1,
       color: '#868e96',
     }
     onChange({ ...speakers, [key]: { ...current, ...patch } })
@@ -81,6 +82,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
         speakerId: cfg.speakerId,
         lengthScale: cfg.lengthScale || 1,
         volume: cfg.volume || 1,
+        pitch: cfg.pitch || 1,
         text: SAMPLE_TEXT,
       })
       audioRef.current?.pause()
@@ -101,6 +103,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
       speakerId: 0,
       lengthScale: isDirection ? 1.15 : 1,
       volume: isDirection ? 0.7 : 1,
+      pitch: 1,
       color: isDirection ? '#868e96' : '#4A90D9',
     }
     const voice = voices?.voices.find((v) => v.name === cfg.model)
@@ -167,6 +170,19 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
             value={cfg.lengthScale || 1}
             onChange={(v) => update(key, { lengthScale: v })}
             label={(v) => `${v.toFixed(2)}× langsamer`}
+          />
+        </Table.Td>
+
+        <Table.Td w={150}>
+          <Slider
+            size="sm"
+            min={0.75}
+            max={1.3}
+            step={0.02}
+            value={cfg.pitch || 1}
+            onChange={(v) => update(key, { pitch: v })}
+            label={(v) => (v === 1 ? 'unverändert' : `${v > 1 ? 'höher' : 'tiefer'} ×${v.toFixed(2)}`)}
+            marks={[{ value: 1 }]}
           />
         </Table.Td>
 
@@ -282,7 +298,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
         </Alert>
       )}
 
-      <Table.ScrollContainer minWidth={1000}>
+      <Table.ScrollContainer minWidth={1150}>
         <Table verticalSpacing="xs" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -290,6 +306,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
               <Table.Th>Stimm-Modell</Table.Th>
               <Table.Th>Stimme</Table.Th>
               <Table.Th>Tempo</Table.Th>
+              <Table.Th>Tonhöhe</Table.Th>
               <Table.Th>Lautstärke</Table.Th>
               <Table.Th>Farbe</Table.Th>
               <Table.Th>Meine Rolle</Table.Th>

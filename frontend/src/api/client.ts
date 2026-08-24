@@ -91,6 +91,7 @@ export const api = {
     speakerId: number
     lengthScale: number
     volume: number
+    pitch: number
     text?: string
   }): Promise<string> => {
     const res = await fetch(`${BASE}/voices/preview`, {

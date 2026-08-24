@@ -33,6 +33,7 @@ type previewRequest struct {
 	SpeakerID   int     `json:"speakerId"`
 	LengthScale float64 `json:"lengthScale"`
 	Volume      float64 `json:"volume"`
+	Pitch       float64 `json:"pitch"`
 	Text        string  `json:"text"`
 }
 
@@ -52,6 +53,9 @@ func (a *API) previewVoice(w http.ResponseWriter, r *http.Request) {
 	if req.Volume <= 0 {
 		req.Volume = 1.0
 	}
+	if req.Pitch <= 0 {
+		req.Pitch = 1.0
+	}
 
 	data, err := a.synth.Preview(r.Context(), synth.Request{
 		Text:        req.Text,
@@ -59,6 +63,7 @@ func (a *API) previewVoice(w http.ResponseWriter, r *http.Request) {
 		SpeakerID:   req.SpeakerID,
 		LengthScale: req.LengthScale,
 		Volume:      req.Volume,
+		Pitch:       req.Pitch,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)

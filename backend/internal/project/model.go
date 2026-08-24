@@ -36,7 +36,7 @@ type Block struct {
 	Rect Rect   `json:"rect"`
 	// Order determines the reading order across the whole play and is freely
 	// re-orderable in the UI (multi-column layouts are not top-to-bottom).
-	Order int `json:"order"`
+	Order int    `json:"order"`
 	Type  string `json:"type"`
 	// Speaker is nil for stage directions.
 	Speaker *string `json:"speaker"`
@@ -53,7 +53,10 @@ type SpeakerConfig struct {
 	SpeakerID   int     `json:"speakerId"`
 	LengthScale float64 `json:"lengthScale"`
 	Volume      float64 `json:"volume"`
-	Color       string  `json:"color"`
+	// Pitch shifts the voice without changing the tempo. 1.0 = unchanged.
+	// Lets one good voice model carry several distinguishable roles.
+	Pitch float64 `json:"pitch"`
+	Color string  `json:"color"`
 }
 
 // Speakers maps speaker name -> voice configuration.

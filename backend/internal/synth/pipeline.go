@@ -210,6 +210,7 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 			SpeakerID:   cfg.SpeakerID,
 			LengthScale: orDefault(cfg.LengthScale, 1.0),
 			Volume:      orDefault(cfg.Volume, 1.0),
+			Pitch:       orDefault(cfg.Pitch, 1.0),
 		})
 		if err != nil {
 			fail(fmt.Errorf("Block %d (%s): %w", i+1, key, err))
@@ -266,7 +267,11 @@ func (s *Service) toMP3(ctx context.Context, wavPath string) (string, error) {
 		return "", nil // ffmpeg is optional
 	}
 	mp3Path := strings.TrimSuffix(wavPath, ".wav") + ".mp3"
-	cmd := exec.CommandContext(ctx, bin, "-y", "-loglevel", "error", "-i", wavPath, "-codec:a", "libmp3lame", "-q:a", "4", mp3Path)
+	// Encoding at 44.1 kHz keeps LAME on MPEG-1, whose psychoacoustic model is
+	// markedly better than the MPEG-2 half-rate mode it uses for 22.05 kHz
+	// input – there the default quality setting lands near 50 kbit/s.
+	cmd := exec.CommandContext(ctx, bin, "-y", "-loglevel", "error",
+		"-i", wavPath, "-ar", "44100", "-codec:a", "libmp3lame", "-b:a", "128k", mp3Path)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(mp3Path)
 		return "", fmt.Errorf("ffmpeg: %w (%s)", err, tail(string(out)))

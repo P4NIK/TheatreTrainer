@@ -21,8 +21,9 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Regieanweisungen als eigener Blocktyp (eigene Stimme, eigenes Tempo)
 - Vorlese-Reihenfolge per Drag & Drop änderbar – wichtig bei mehrspaltigem
   Layout
-- Pro Sprecher: Stimm-Modell, Sprecher-ID (bei Multi-Speaker-Modellen), Tempo,
-  Lautstärke, Farbe, Hörprobe
+- Pro Sprecher: Stimm-Modell, Sprecher-ID (bei Multi-Speaker-Modellen),
+  Tonhöhe, Tempo, Lautstärke, Farbe, Hörprobe – über die Tonhöhe lassen sich
+  mehrere Rollen aus einer einzigen guten Stimme besetzen
 - Eigene Rolle markieren und beim Erzeugen als 2,5-Sekunden-Pause aussparen
 - Ausgabe als MP3 (wenn ffmpeg vorhanden) oder WAV
 
@@ -124,11 +125,44 @@ python -m piper.download_voices de_DE-thorsten-medium --data-dir voices
 Oder direkt von Hugging Face:
 <https://huggingface.co/rhasspy/piper-voices/tree/main/de/de_DE>
 
-Für ein Stück mit mehreren Rollen lohnen sich mehrere Stimmen, z. B.
-`de_DE-thorsten-medium`, `de_DE-karlsson-low`, `de_DE-eva_k-x_low`,
-`de_DE-ramona-low`. Es gehen auch Multi-Speaker-Modelle wie
-`de_DE-thorsten_emotional-medium` – dort wählst du pro Rolle zusätzlich eine
-Sprecher-ID.
+### Welche deutsche Stimme? Und wie besetze ich mehrere Rollen?
+
+Die Auswahl an deutschen Piper-Stimmen ist überschaubar. Das ist der komplette
+Bestand:
+
+| Stimme | Stufe | Sprecher | Anmerkung |
+|---|---|---|---|
+| `de_DE-thorsten-high` | high | 1 | **beste deutsche Stimme**, Studioaufnahmen |
+| `de_DE-thorsten-medium` | medium | 1 | fast so gut, deutlich schneller |
+| `de_DE-thorsten_emotional-medium` | medium | 8 | derselbe Sprecher in acht Stimmungen |
+| `de_DE-mls-medium` | medium | 236 | aus Hörbuchaufnahmen, sehr schwankend |
+| `de_DE-kerstin-low`, `-karlsson-low`, `-pavoque-low`, `-ramona-low` | low | 1 | 16 kHz, rau |
+| `de_DE-eva_k-x_low` | x_low | 1 | 16 kHz, blechern |
+
+Das Naheliegende – für jede Rolle eine andere Stimme – geht damit nicht gut
+aus: Es gibt genau **eine** wirklich gute deutsche Stimme. `mls-medium` klingt
+trotz „medium“ mäßig, weil es aus Laien-Hörbuchaufnahmen unterschiedlichster
+Aufnahmequalität trainiert wurde; daran ändert auch die Wahl des Sprechers
+wenig.
+
+Der Weg, der funktioniert: **eine gute Stimme für alle Rollen, unterschieden
+über die Tonhöhe.**
+
+```bash
+python -m piper.download_voices de_DE-thorsten-high --data-dir voices
+```
+
+In der Sprecher-Tabelle gibt es dafür den Regler *Tonhöhe*. Er verschiebt
+Grundton und Formanten gemeinsam – anders als eine reine Abspielgeschwindigkeit
+klingt das nach einer anderen Person und nicht nach schnellerem Band. Das Tempo
+bleibt davon unberührt, beide Regler sind unabhängig. Neue Rollen bekommen
+automatisch verschiedene Werte, die du nach Gehör nachziehst.
+
+Als Anhaltspunkt: ±10 % sind eine andere Person gleichen Geschlechts, ±20 %
+verschieben deutlich Richtung jünger/älter. Über etwa ±25 % hinaus wird es
+karikaturhaft, deshalb ist dort Schluss. Wer mehr Abwechslung will, kombiniert
+Tonhöhe mit leicht unterschiedlichem Tempo oder nimmt für einzelne Rollen
+zusätzlich `thorsten_emotional-medium` mit seinen acht Stimmungen.
 
 ## Starten
 
@@ -174,9 +208,10 @@ cd ../backend && go run ./cmd/server
    Über den Chip links oben an jedem Rahmen lässt sich ein Block auswählen; in
    der rechten Liste bearbeitest, löschst und sortierst du sie.
    Gespeichert wird automatisch (ca. 1 s nach der letzten Änderung).
-3. **Sprecher** – jeder Rolle ein Stimm-Modell zuweisen, Tempo und Lautstärke
-   einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die eigene Rolle
-   markieren.
+3. **Sprecher** – jeder Rolle ein Stimm-Modell zuweisen, Tonhöhe, Tempo und
+   Lautstärke einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die
+   eigene Rolle markieren. Zum Besetzen mehrerer Rollen siehe „Welche deutsche
+   Stimme?“.
 4. **Hörfassung** – Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
    im Browser anhören oder herunterladen.
@@ -213,9 +248,8 @@ Dazu kommt nur, was wirklich nötig ist:
 - `-s <id>` **nur** bei Multi-Speaker-Modellen (`num_speakers > 1`)
 - `--length-scale <wert>` **nur**, wenn der Tempo-Regler nicht auf 1,0 steht
 
-Die Lautstärke wird nicht an Piper durchgereicht, sondern nachträglich auf die
-Samples gerechnet – so verhält sie sich bei jeder Piper-Version gleich. Der
-Text geht über die Standardeingabe.
+Lautstärke und Tonhöhe kennt Pipers Kommandozeile gar nicht; beide werden
+nachträglich auf die Samples gerechnet. Der Text geht über die Standardeingabe.
 
 Wer das nachprüfen will, startet das Backend mit `THEATER_LOG_PIPER=1`; dann
 steht jeder Aufruf mitsamt Text in der Konsole und lässt sich direkt mit einem

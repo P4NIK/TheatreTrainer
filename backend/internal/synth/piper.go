@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,10 @@ type Info struct {
 // reprobeAfter is how long a failed detection is cached. Short enough that
 // installing Piper while the server runs is picked up by a page reload.
 const reprobeAfter = 15 * time.Second
+
+// edgeFadeMillis is the ramp applied at the start and end of every synthesised
+// segment. Short enough to be inaudible, long enough to remove clicks.
+const edgeFadeMillis = 8
 
 // logPiperCalls mirrors every Piper invocation to the server log, so the
 // command the app runs can be compared with a hand-typed one. Enable with
@@ -146,10 +151,26 @@ type Request struct {
 	SpeakerID   int
 	LengthScale float64
 	Volume      float64
+	// Pitch shifts the voice: 1.0 leaves it alone, 1.1 is roughly a tone
+	// higher, 0.9 a tone lower. See the comment on Synthesize for how it
+	// works.
+	Pitch float64
 }
+
+// pitchRange bounds the pitch factor. Beyond roughly ±25 % the formants shift
+// so far that the voice turns into a caricature.
+const (
+	minPitch = 0.75
+	maxPitch = 1.30
+)
 
 // Synthesize renders one utterance to a temporary WAV file and returns the
 // decoded mono samples together with the model's sample rate.
+//
+// The pitch setting is applied to the finished audio: it is resampled (which
+// moves pitch and formants together – that is what makes a voice sound like a
+// different person rather than a sped-up tape) and then stretched back to its
+// original length, so tempo and pitch stay independent of each other.
 func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 	// Piper treats every stdin line as a separate utterance, so the text is
 	// collapsed into a single line before it is handed over.
@@ -185,6 +206,13 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 	if voice.NumSpeakers > 1 {
 		args = append(args, "-s", strconv.Itoa(req.SpeakerID))
 	}
+
+	pitch := req.Pitch
+	if pitch <= 0 {
+		pitch = 1.0
+	}
+	pitch = math.Max(minPitch, math.Min(maxPitch, pitch))
+
 	if req.LengthScale > 0 && req.LengthScale != 1.0 {
 		args = append(args, p.cfg.LengthScaleFlag, formatFloat(req.LengthScale))
 	}
@@ -215,6 +243,17 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 	if req.Volume > 0 && req.Volume != 1.0 {
 		seg.samples = applyVolume(seg.samples, req.Volume)
 	}
+
+	// Pitch is applied here rather than through Piper: the CLI has no pitch
+	// option, and its length scale turned out not to change the duration
+	// proportionally, so it cannot be used to compensate either.
+	if pitch != 1.0 {
+		seg.samples = pitchShift(seg.samples, seg.sampleRate, pitch)
+	}
+
+	// Clean up the joins: several voices carry a DC offset, and a segment that
+	// starts or ends mid-waveform clicks against the surrounding silence.
+	seg.samples = fadeEdges(removeDCOffset(seg.samples), seg.sampleRate, edgeFadeMillis)
 	return seg, nil
 }
 
