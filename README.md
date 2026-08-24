@@ -197,6 +197,29 @@ Umgebungsvariablen lässt sich alles überschreiben:
 | `THEATER_SAMPLE_RATE` | `22050` | Abtastrate der Ausgabedatei |
 | `THEATER_GAP_MS` | `450` | Pause zwischen zwei Blöcken |
 | `THEATER_SKIP_PAUSE_MS` | `2500` | Pause statt der eigenen Rolle |
+| `THEATER_LOG_PIPER` | aus | mit `1` jeden Piper-Aufruf samt Text ins Server-Log schreiben |
+
+### Was die App an Piper übergibt
+
+Bewusst so wenig wie möglich – für eine Einzelstimme mit unveränderten Reglern
+ist der Aufruf derselbe, den du auch von Hand tippen würdest:
+
+```
+piper -m voices/<modell>.onnx -c voices/<modell>.onnx.json -f <temp>.wav
+```
+
+Dazu kommt nur, was wirklich nötig ist:
+
+- `-s <id>` **nur** bei Multi-Speaker-Modellen (`num_speakers > 1`)
+- `--length-scale <wert>` **nur**, wenn der Tempo-Regler nicht auf 1,0 steht
+
+Die Lautstärke wird nicht an Piper durchgereicht, sondern nachträglich auf die
+Samples gerechnet – so verhält sie sich bei jeder Piper-Version gleich. Der
+Text geht über die Standardeingabe.
+
+Wer das nachprüfen will, startet das Backend mit `THEATER_LOG_PIPER=1`; dann
+steht jeder Aufruf mitsamt Text in der Konsole und lässt sich direkt mit einem
+Kommando aus der Shell vergleichen.
 
 ## Datenablage
 
@@ -266,6 +289,16 @@ Ordner `voices/`? Der Pfad steht in der Warnung im Sprecher-Tab.
 
 **Synthese bricht mit einem Piper-Fehler ab** – ältere Piper-Versionen kennen
 `--length-scale` nicht. Dann `PIPER_LENGTH_SCALE_FLAG=--length_scale` setzen.
+
+**Umlaute werden als Zeichen vorgelesen („A Tilde“, „Absatz“)** – das war ein
+Encoding-Fehler und ist behoben. Zum Verständnis, falls es irgendwo wieder
+auftaucht: Der Text geht als UTF-8 an Piper, Pipers Python-Variante decodiert
+die Standardeingabe aber mit der Zeichentabelle des Systems – unter deutschem
+Windows cp1252. Aus `Hörprobe` wird dann `HÃ¶rprobe`, und espeak spricht
+unbekannte Zeichen mit Namen aus: `Ã` → „A Tilde“, `¶` → „Absatz“. Das Backend
+setzt für den Piper-Prozess deshalb `PYTHONUTF8=1` und
+`PYTHONIOENCODING=utf-8`. Ein Satz ohne Umlaute ist übrigens unauffällig –
+darum fällt der Fehler beim Testen leicht durchs Raster.
 
 **Beim Rechteckziehen kommt kein Text** – das PDF ist vermutlich ein Scan ohne
 Textebene. Der Text lässt sich im Dialog trotzdem von Hand eintippen; für

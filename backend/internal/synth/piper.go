@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,6 +51,11 @@ type Info struct {
 // reprobeAfter is how long a failed detection is cached. Short enough that
 // installing Piper while the server runs is picked up by a page reload.
 const reprobeAfter = 15 * time.Second
+
+// logPiperCalls mirrors every Piper invocation to the server log, so the
+// command the app runs can be compared with a hand-typed one. Enable with
+// THEATER_LOG_PIPER=1.
+var logPiperCalls = os.Getenv("THEATER_LOG_PIPER") == "1"
 
 // resolve returns the working Piper command, probing if necessary.
 func (p *Piper) resolve() ([]string, Info) {
@@ -183,7 +189,12 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 		args = append(args, p.cfg.LengthScaleFlag, formatFloat(req.LengthScale))
 	}
 
+	if logPiperCalls {
+		log.Printf("piper: %s  <<< %q", strings.Join(append([]string{base[0]}, args...), " "), text)
+	}
+
 	cmd := exec.CommandContext(ctx, base[0], args...)
+	cmd.Env = utf8Env()
 	cmd.Stdin = strings.NewReader(text + "\n")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -205,6 +216,27 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 		seg.samples = applyVolume(seg.samples, req.Volume)
 	}
 	return seg, nil
+}
+
+// utf8Env returns the parent environment with Python forced into UTF-8 mode.
+//
+// The text is handed to Piper on stdin as UTF-8. Python, however, decodes
+// stdin with the system's locale encoding – on a German Windows that is
+// cp1252, not UTF-8. "Hörprobe" then arrives as "HÃ¶rprobe", and since espeak
+// pronounces stray symbols by name, the voice reads "A Tilde" for Ã and
+// "Absatz" for ¶ instead of the umlaut. These two variables make Python decode
+// stdin as UTF-8 regardless of the machine's locale; a native Piper build
+// ignores them.
+func utf8Env() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env)+2)
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PYTHONUTF8=") || strings.HasPrefix(kv, "PYTHONIOENCODING=") {
+			continue // never let a stale setting win over ours
+		}
+		out = append(out, kv)
+	}
+	return append(out, "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
 }
 
 func formatFloat(f float64) string {
