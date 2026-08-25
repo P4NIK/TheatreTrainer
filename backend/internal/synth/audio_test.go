@@ -145,3 +145,41 @@ func dominantFreq(samples []int, rate int) float64 {
 	}
 	return float64(rate) / float64(bestLag)
 }
+
+// TestTimeStretchKeepsTheEnd guards against the analysis position drifting
+// backwards. WSOLA picks each frame from a search window; if that offset is
+// allowed to accumulate, the algorithm consumes its input more slowly than it
+// should and simply never reaches the last part of it – the audible result is
+// a block whose final word is cut off.
+func TestTimeStretchKeepsTheEnd(t *testing.T) {
+	const rate = 22050
+	for _, s := range []float64{0.84, 0.9, 1.15, 1.25} {
+		// 800 ms tone, then 200 ms of silence.
+		in := append(sine(rate, 200, rate*8/10), make([]int, rate*2/10)...)
+		out := timeStretch(in, rate, s)
+
+		// The silence has to survive as silence at the end …
+		tailLen := int(float64(rate) * 0.15 * s)
+		if rms(out[len(out)-tailLen:]) > 200 {
+			t.Errorf("Faktor %.2f: Ende ist nicht mehr still (RMS %.0f) – Signal wurde abgeschnitten",
+				s, rms(out[len(out)-tailLen:]))
+		}
+		// … and the tone must still be there right before it.
+		toneEnd := int(float64(rate) * 0.7 * s)
+		if rms(out[toneEnd-rate/20:toneEnd]) < 3000 {
+			t.Errorf("Faktor %.2f: Nutzsignal fehlt vor dem Ende (RMS %.0f)",
+				s, rms(out[toneEnd-rate/20:toneEnd]))
+		}
+	}
+}
+
+func rms(x []int) float64 {
+	if len(x) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range x {
+		sum += float64(v) * float64(v)
+	}
+	return math.Sqrt(sum / float64(len(x)))
+}

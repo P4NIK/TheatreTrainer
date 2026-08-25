@@ -231,11 +231,7 @@ func timeStretch(x []int, rate int, s float64) []int {
 	if len(x) < 3*frame {
 		return x // too short to stretch without artefacts
 	}
-	hop := frame / 2                                 // Hann windows at half a frame sum to one
-	analysisHop := int(math.Round(float64(hop) / s)) // s > 1 means: advance more slowly
-	if analysisHop < 1 {
-		analysisHop = 1
-	}
+	hop := frame / 2 // Hann windows at half a frame sum to one
 	search := frame / 4
 
 	win := make([]float64, frame)
@@ -248,9 +244,18 @@ func timeStretch(x []int, rate int, s float64) []int {
 	weight := make([]float64, outLen+frame)
 
 	var template []int // how the previous frame would have continued naturally
-	ideal := 0
 
-	for out := 0; out+frame <= outLen; out += hop {
+	for n := 0; ; n++ {
+		out := n * hop
+		if out+frame > outLen {
+			break
+		}
+		// The ideal position is computed from the frame index, never from the
+		// previous match. Advancing from the match instead would let the
+		// search offset accumulate: the analysis would creep backwards and
+		// the tail of the input would never be reached, cutting off the end.
+		ideal := int(math.Round(float64(n) * float64(hop) / s))
+
 		start := ideal
 		if template != nil {
 			start = bestMatch(x, template, ideal, search)
@@ -272,7 +277,6 @@ func timeStretch(x []int, rate int, s float64) []int {
 		} else {
 			template = nil
 		}
-		ideal = start + analysisHop
 	}
 
 	result := make([]int, outLen)
@@ -284,8 +288,8 @@ func timeStretch(x []int, rate int, s float64) []int {
 	return result
 }
 
-// bestMatch returns the offset near ideal whose samples correlate best with
-// the template.
+// bestMatch returns the offset near ideal whose samples continue the template
+// most smoothly.
 func bestMatch(x, template []int, ideal, search int) int {
 	frame := len(template)
 	from := ideal - search
@@ -302,14 +306,20 @@ func bestMatch(x, template []int, ideal, search int) int {
 
 	best, bestScore := from, math.Inf(-1)
 	for cand := from; cand <= to; cand++ {
-		var dot float64
+		var dot, energy float64
 		// A coarse stride is plenty: we are looking for the alignment of pitch
 		// periods, not for sample-exact similarity.
 		for i := 0; i < frame; i += 4 {
-			dot += float64(x[cand+i]) * float64(template[i])
+			v := float64(x[cand+i])
+			dot += v * float64(template[i])
+			energy += v * v
 		}
-		if dot > bestScore {
-			best, bestScore = cand, dot
+		// Normalising by the candidate's energy matters: a plain dot product
+		// prefers whatever is loudest, which drags the search towards the
+		// louder middle of an utterance and away from its quiet ending.
+		score := dot / math.Sqrt(energy+1)
+		if score > bestScore {
+			best, bestScore = cand, score
 		}
 	}
 	return best
