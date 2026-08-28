@@ -94,6 +94,27 @@ const src = await page.locator('audio').getAttribute('src')
 console.log('   Audio:', src)
 await page.screenshot({ path: '/tmp/shot-audio.png' })
 
+step('Automatisch erkennen – auch von einem anderen Tab aus')
+// Regression: der Knopf sitzt in der Kopfzeile und ist auf allen Tabs sichtbar,
+// während der PDF-Editor dort ausgehängt ist. Ein von dort geliehenes
+// pdf.js-Dokument wäre längst zerstört ("sendWithPromise of null").
+await page.getByRole('tab', { name: 'Sprecher' }).click()
+await page.waitForTimeout(800)
+await page.getByRole('button', { name: 'Automatisch erkennen' }).click()
+await page.waitForSelector('.mantine-Modal-content')
+await page.waitForFunction(() => /gelernt|geraten/.test(document.body.innerText), null, { timeout: 30000 })
+await page.getByRole('button', { name: 'Durchsuchen' }).click()
+await page.waitForFunction(() => /Sprechtext|fehlgeschlagen/i.test(document.body.innerText), null, { timeout: 60000 })
+const detectText = await page.locator('.mantine-Modal-content').innerText()
+if (detectText.includes('fehlgeschlagen')) {
+  errors.push('Automatische Erkennung: ' + detectText.split('\n').find((l) => l.includes('Cannot') || l.includes('fehlgeschlagen')))
+} else {
+  console.log('   ' + detectText.split('\n').filter((l) => /Sprechtext|Regie$/.test(l)).join(' · '))
+}
+await page.getByRole('button', { name: 'Abbrechen' }).click()
+await page.getByRole('tab', { name: 'Editor' }).click()
+await page.waitForTimeout(800)
+
 step('Neu laden – bleiben die Blöcke erhalten?')
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForSelector('.pdf-stage canvas')

@@ -52,16 +52,26 @@ function inside(p: TextPiece, r: Rect): boolean {
 }
 
 /**
- * Collects all text inside a rectangle and joins it into a single line.
- * Piper reads one line per utterance, so line breaks from the layout are
- * intentionally flattened. Hyphenation at a line end is undone.
+ * Collects all text inside a rectangle. Piper reads one line per utterance, so
+ * line breaks from the layout are intentionally flattened.
  */
 export function textInRect(pieces: TextPiece[], rect: Rect): string {
-  const hits = pieces.filter((p) => inside(p, rect))
-  if (hits.length === 0) return ''
+  return piecesToText(pieces.filter((p) => inside(p, rect)))
+}
+
+/**
+ * Joins text pieces into a single line of readable text.
+ *
+ * Shared by the manual rectangle selection and the automatic detection so both
+ * produce exactly the same text for the same pieces. pdf.js splits words at
+ * kerning boundaries, so spaces have to be re-inserted from the geometry, and
+ * hyphenation at a line end is undone.
+ */
+export function piecesToText(pieces: TextPiece[]): string {
+  if (pieces.length === 0) return ''
 
   // Group into visual lines: pieces whose vertical centres are close together.
-  const sorted = [...hits].sort((a, b) => a.y - b.y || a.x - b.x)
+  const sorted = [...pieces].sort((a, b) => a.y - b.y || a.x - b.x)
   const lines: TextPiece[][] = []
   for (const p of sorted) {
     const last = lines[lines.length - 1]
@@ -83,8 +93,8 @@ export function textInRect(pieces: TextPiece[], rect: Rect): string {
     for (const p of ordered) {
       if (prev) {
         const gap = p.x - (prev.x + prev.w)
-        // pdf.js splits words at kerning boundaries; only insert a space when
-        // there is a visible gap and neither side already has one.
+        // Only insert a space where there is a visible gap and neither side
+        // already has one.
         const needsSpace =
           gap > prev.h * 0.12 && !/\s$/.test(out) && !/^\s/.test(p.str)
         if (needsSpace) out += ' '
@@ -100,7 +110,7 @@ export function textInRect(pieces: TextPiece[], rect: Rect): string {
     if (!line) continue
     if (text === '') {
       text = line
-    } else if (/[-­]$/.test(text)) {
+    } else if (/[-\u00ad]$/.test(text)) {
       text = text.slice(0, -1) + line // undo hyphenation
     } else {
       text += ' ' + line
@@ -123,4 +133,22 @@ export function guessSpeaker(text: string): { speaker: string | null; rest: stri
     return { speaker: caps[1].trim(), rest: caps[2].trim() }
   }
   return { speaker: null, rest: text.trim() }
+}
+
+/**
+ * Loads the text layer of several pages at once. Used by the automatic
+ * detection, which needs pages the editor has not rendered.
+ */
+export async function piecesForPages(
+  doc: { getPage: (n: number) => Promise<PDFPageProxy> },
+  pages: number[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<Map<number, TextPiece[]>> {
+  const result = new Map<number, TextPiece[]>()
+  for (let i = 0; i < pages.length; i++) {
+    const page = await doc.getPage(pages[i])
+    result.set(pages[i], await extractPieces(page))
+    onProgress?.(i + 1, pages.length)
+  }
+  return result
 }

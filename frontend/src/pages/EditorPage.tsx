@@ -19,9 +19,11 @@ import {
   IconHeadphones,
   IconSquareRoundedLetterA,
   IconUsers,
+  IconWand,
 } from '@tabler/icons-react'
 
 import { api } from '../api/client'
+import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
 import PdfCanvasEditor from '../components/PdfCanvasEditor/PdfCanvasEditor'
@@ -54,6 +56,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const [filter, setFilter] = useState<'page' | 'all'>('page')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<{ block: Block; isNew: boolean } | null>(null)
+  const [detectOpen, setDetectOpen] = useState(false)
 
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -182,6 +185,22 @@ export default function EditorPage({ projectId, onBack }: Props) {
 
   const options = useMemo(() => speakerNames(blocks), [blocks])
 
+  /**
+   * Adds automatically detected blocks. The combined list is put back into
+   * reading order – page, then position on the page – and renumbered.
+   */
+  const addDetected = (detected: Block[]) => {
+    const merged = [...blocks, ...detected].sort(
+      (a, b) => a.page - b.page || a.rect.y - b.rect.y || a.rect.x - b.rect.x,
+    )
+    mutateBlocks(renumber(merged))
+    notifications.show({
+      color: 'green',
+      title: 'Blöcke übernommen',
+      message: `${detected.length} Blöcke hinzugefügt.`,
+    })
+  }
+
   if (loadError) {
     return (
       <Box>
@@ -223,6 +242,14 @@ export default function EditorPage({ projectId, onBack }: Props) {
           <Text size="xs" c="dimmed">
             {saving ? 'speichert …' : dirty ? 'ungespeicherte Änderungen' : 'gespeichert'}
           </Text>
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconWand size={16} />}
+            onClick={() => setDetectOpen(true)}
+          >
+            Automatisch erkennen
+          </Button>
           <Button
             size="xs"
             variant="light"
@@ -303,6 +330,15 @@ export default function EditorPage({ projectId, onBack }: Props) {
           />
         </Tabs.Panel>
       </Tabs>
+
+      <AutoDetectModal
+        opened={detectOpen}
+        onClose={() => setDetectOpen(false)}
+        fileUrl={api.pdfUrl(projectId)}
+        currentPage={page}
+        existing={blocks}
+        onApply={addDetected}
+      />
 
       <BlockEditModal
         block={draft?.block ?? null}

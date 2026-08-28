@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   ActionIcon,
@@ -21,15 +21,9 @@ import {
 } from '@tabler/icons-react'
 
 import { blockColor } from '../../lib/blocks'
+import '../../lib/pdfWorker'
 import { extractPieces, textInRect, type TextPiece } from '../../lib/pdfText'
 import type { Block, Rect, Speakers } from '../../types'
-
-// pdf.js needs its worker as a separate bundle; Vite resolves this URL at
-// build time, so it works in dev and in the production build alike.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
 
 interface Props {
   fileUrl: string

@@ -18,6 +18,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Rechteck-Auswahl auf der Seite; der Text wird aus der PDF-Textebene
   übernommen und ist frei korrigierbar
 - Sprechername wird aus Mustern wie `HUGO: …` automatisch vorgeschlagen
+- Automatische Blockerkennung für das ganze Stück: Das Spaltenraster wird aus
+  den von Hand gezeichneten Blöcken gelernt
 - Regieanweisungen als eigener Blocktyp (eigene Stimme, eigenes Tempo)
 - Vorlese-Reihenfolge per Drag & Drop änderbar – wichtig bei mehrspaltigem
   Layout
@@ -208,13 +210,55 @@ cd ../backend && go run ./cmd/server
    Über den Chip links oben an jedem Rahmen lässt sich ein Block auswählen; in
    der rechten Liste bearbeitest, löschst und sortierst du sie.
    Gespeichert wird automatisch (ca. 1 s nach der letzten Änderung).
-3. **Sprecher** – jeder Rolle ein Stimm-Modell zuweisen, Tonhöhe, Tempo und
+3. **Automatisch erkennen** – wenn ein paar Blöcke stehen, füllt der Knopf
+   oben rechts den Rest des Stücks (siehe unten).
+4. **Sprecher** – jeder Rolle ein Stimm-Modell zuweisen, Tonhöhe, Tempo und
    Lautstärke einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die
    eigene Rolle markieren. Zum Besetzen mehrerer Rollen siehe „Welche deutsche
    Stimme?“.
-4. **Hörfassung** – Schalter für „eigene Rolle aussparen“ und
+5. **Hörfassung** – Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
    im Browser anhören oder herunterladen.
+
+### Blöcke automatisch erkennen
+
+Ein Theaterstück ist in Spalten gesetzt: Sprechername und Regieanweisungen am
+linken Rand, der Sprechtext eingerückt. Wo genau diese beiden Spalten liegen,
+macht jeder Verlag anders – deshalb ist nichts fest verdrahtet, sondern die App
+liest es aus deinen eigenen Blöcken ab.
+
+**Vorgehen:** zwei, drei Blöcke von Hand ziehen – eine Sprechzeile und eine
+Regieanweisung genügen –, dann oben rechts auf „Automatisch erkennen“. Der
+Dialog zeigt, was er gelernt hat („Sprechernamen beginnen bei 6,0 % der
+Seitenbreite, der Sprechtext bei 24,2 %“), du wählst den Bereich und bekommst
+eine Vorschau, bevor etwas übernommen wird.
+
+Ohne gezeichnete Blöcke rät die App die Spalten aus dem Seitenaufbau. Das
+funktioniert oft, aber das Lernen ist deutlich zuverlässiger.
+
+Was dabei automatisch passiert:
+
+- Sprechername und Sprechtext werden getrennt, mehrzeilige Repliken
+  zusammengefasst.
+- Eine Replik, die auf der nächsten Seite weiterläuft, behält ihren Sprecher.
+- Seitenzahlen und zentrierte Überschriften („Erster Akt“) werden ignoriert.
+- Seiten ohne Dialog – Titelei, Rechtehinweise, Personenverzeichnis – werden
+  übersprungen (abschaltbar).
+- Eingeklammerte Einschübe wie „(kostet)“ fliegen aus dem Sprechtext
+  (abschaltbar) – sonst liest die Stimme sie mit.
+- Bereiche, auf denen schon ein Block liegt, bleiben unangetastet. Ein zweiter
+  Durchlauf ändert also nichts, und ein halb bearbeitetes Stück lässt sich
+  auffüllen.
+
+Anschließend wird die Vorlese-Reihenfolge nach Seite und Position neu vergeben.
+Bei mehrspaltigem Satz kann das falsch sein – dann in der Blockliste per
+Drag & Drop korrigieren.
+
+**Der Text kommt unverändert aus dem PDF.** Ist das PDF fehlerhaft, ist es der
+Block auch. In der Vorlage zu diesem Projekt steht an mehreren Stellen
+tatsächlich „LandPortion“ statt „Landwein“ – offenbar eine verunglückte
+Suchen-und-Ersetzen-Aktion beim Verlag. Solche Stellen korrigierst du in der
+Blockliste.
 
 ## Konfiguration
 
@@ -350,11 +394,15 @@ Backend bauen und prüfen:
 cd backend && go vet ./... && go build ./...
 ```
 
-Frontend typprüfen und bauen:
+Frontend typprüfen, testen und bauen:
 
 ```bash
-cd frontend && npm run build
+cd frontend && npm test && npm run build
 ```
+
+`npm test` prüft vor allem die automatische Blockerkennung – Sprechernamen, die
+als zwei Textstücke gesetzt sind, Regieanweisungen, die mit einem Rollennamen
+beginnen, Repliken über Seitengrenzen, Seitenzahlen.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):
