@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/bloodmage/theater-tts/backend/internal/project"
 	"github.com/bloodmage/theater-tts/backend/internal/synth"
 )
 
@@ -164,4 +165,46 @@ func (a *API) getAudio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", `inline; filename="`+filepath.Base(job.FilePath())+`"`)
 	http.ServeContent(w, r, filepath.Base(job.FilePath()), st.ModTime(), f)
+}
+
+// getBlockAudio renders one block for playback in the editor. It goes through
+// the same cache as a full run, so a block that was rendered once plays back
+// immediately – and a block played here is already done when the whole play is
+// assembled later.
+func (a *API) getBlockAudio(w http.ResponseWriter, r *http.Request) {
+	data, err := a.synth.RenderSingleBlock(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "blockId"))
+	if err != nil {
+		if errors.Is(err, project.ErrNotFound) {
+			storeError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+func (a *API) cacheStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, err := a.store.Get(id); err != nil {
+		storeError(w, err)
+		return
+	}
+	files, bytes := a.synth.Cache(id).Stats()
+	writeJSON(w, http.StatusOK, map[string]any{"files": files, "bytes": bytes})
+}
+
+func (a *API) clearCache(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, err := a.store.Get(id); err != nil {
+		storeError(w, err)
+		return
+	}
+	if err := a.synth.Cache(id).Clear(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

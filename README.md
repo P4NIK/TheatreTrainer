@@ -26,7 +26,11 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Pro Sprecher: Stimm-Modell, Sprecher-ID (bei Multi-Speaker-Modellen),
   Tonhöhe, Tempo, Lautstärke, Farbe, Hörprobe – über die Tonhöhe lassen sich
   mehrere Rollen aus einer einzigen guten Stimme besetzen
-- Eigene Rolle markieren und beim Erzeugen als 2,5-Sekunden-Pause aussparen
+- Eigene Rolle markieren und beim Erzeugen durch eine Pause **in Originallänge**
+  ersetzen – der Einsatz kommt dadurch zeitlich richtig
+- Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
+  nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
+  in der Blockliste anhören
 - Ausgabe als MP3 (wenn ffmpeg vorhanden) oder WAV
 
 ## Voraussetzungen
@@ -275,7 +279,7 @@ Umgebungsvariablen lässt sich alles überschreiben:
 | `FFMPEG_BIN` | `ffmpeg` | für den MP3-Export |
 | `THEATER_SAMPLE_RATE` | `22050` | Abtastrate der Ausgabedatei |
 | `THEATER_GAP_MS` | `450` | Pause zwischen zwei Blöcken |
-| `THEATER_SKIP_PAUSE_MS` | `2500` | Pause statt der eigenen Rolle |
+| `THEATER_SKIP_PAUSE_MS` | `2500` | Ersatzpause, wenn die eigene Rolle keine Stimme hat |
 | `THEATER_LOG_PIPER` | aus | mit `1` jeden Piper-Aufruf samt Text ins Server-Log schreiben |
 
 ### Was die App an Piper übergibt
@@ -299,15 +303,56 @@ Wer das nachprüfen will, startet das Backend mit `THEATER_LOG_PIPER=1`; dann
 steht jeder Aufruf mitsamt Text in der Konsole und lässt sich direkt mit einem
 Kommando aus der Shell vergleichen.
 
+### Zwischenspeicher und einzelne Blöcke
+
+Das Erzeugen eines Blocks dauert je nach Länge ein bis drei Sekunden – bei
+einem ganzen Stück summiert sich das. Deshalb wird jeder Block einzeln unter
+`data/projects/<id>/cache/` abgelegt, benannt nach einem Hash aus genau dem,
+was Piper zu sehen bekommt:
+
+```
+Text (normalisiert) · Stimm-Modell · Sprecher-ID · Tempo · Renderer-Version
+```
+
+Änderst du den Text eines Blocks, ändert sich sein Hash und nur dieser Block
+wird neu erzeugt. Alles andere kommt aus dem Zwischenspeicher.
+
+**Tonhöhe und Lautstärke stehen bewusst nicht im Hash.** Beide werden erst nach
+Piper auf die Samples gerechnet, also kostet das Verschieben dieser Regler
+keine neue Synthese – der Zwischenspeicher bleibt gültig.
+
+In der Blockliste hat jeder Block einen Play-Knopf. Beim ersten Mal wird der
+Block erzeugt, danach startet er sofort – und beim späteren Erzeugen des ganzen
+Stücks ist er schon fertig. Umgekehrt gilt genauso: Was beim Gesamtdurchlauf
+entstanden ist, spielt in der Liste ohne Wartezeit.
+
+Nach jedem Durchlauf werden Einträge entfernt, auf die kein Block mehr
+verweist. Der Hörfassungs-Tab zeigt Anzahl und Größe und hat einen Knopf zum
+Leeren. Als Größenordnung: Ein abendfüllendes Stück mit rund 1400 Blöcken
+belegt etwa 250 MB. Der Ordner liegt unter `data/` und damit in `.gitignore`.
+
+### Die eigene Rolle als Pause
+
+Ist „eigene Rolle aussparen“ aktiv, wird deine Rolle trotzdem synthetisiert –
+nur landet statt des Tons eine **gleich lange Stille** in der Datei. Das ist
+der Punkt: Die Aufnahme läuft im Takt des Stücks weiter, dein Einsatz kommt an
+der richtigen Stelle und ist so lang, wie er sein muss.
+
+Weil das Audio dabei im Zwischenspeicher landet, kostet das Umschalten zwischen
+„mit meiner Rolle“ und „ohne“ danach nichts mehr. Hat deine Rolle keine Stimme
+zugewiesen, ist die Länge unbekannt; dann gibt es die feste Pause aus
+`THEATER_SKIP_PAUSE_MS`.
+
 ## Datenablage
 
 ```
 data/projects/<projekt-id>/
   project.json    # Name, PDF, Seitenzahl, eigene Rolle
   blocks.json     # markierte Blöcke mit relativen Koordinaten und Text
-  speakers.json   # Stimme, Tempo, Lautstärke und Farbe je Sprecher
+  speakers.json   # Stimme, Tonhöhe, Tempo, Lautstärke und Farbe je Sprecher
   source.pdf      # das importierte Stück
   audio/          # erzeugte Hörfassungen
+  cache/          # Audio je Block, benannt nach dem Hash seiner Einstellungen
 ```
 
 Die Rechteck-Koordinaten sind relativ zur Seitengröße (0–1) gespeichert und
@@ -345,6 +390,8 @@ frontend/
 | `DELETE` | `/api/projects/{id}` | Projekt löschen |
 | `GET` | `/api/projects/{id}/pdf` | Original-PDF ausliefern |
 | `GET`/`PUT` | `/api/projects/{id}/blocks` | Blöcke laden/ersetzen |
+| `GET` | `/api/projects/{id}/blocks/{blockId}/audio` | einzelnen Block erzeugen/abspielen |
+| `GET`/`DELETE` | `/api/projects/{id}/cache` | Zwischenspeicher abfragen/leeren |
 | `GET`/`PUT` | `/api/projects/{id}/speakers` | Sprecher-Konfiguration |
 | `GET` | `/api/voices` | installierte Piper-Modelle |
 | `POST` | `/api/voices/preview` | Hörprobe synthetisieren (WAV) |

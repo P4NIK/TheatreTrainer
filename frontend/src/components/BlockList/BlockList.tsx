@@ -25,12 +25,17 @@ import {
   Stack,
   Text,
 } from '@mantine/core'
-import { IconGripVertical, IconPencil, IconTrash } from '@tabler/icons-react'
+import { IconGripVertical, IconPencil, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
+import { notifications } from '@mantine/notifications'
+import { useRef, useState } from 'react'
+
+import { api } from '../../api/client'
 
 import { blockColor, renumber, splitParens } from '../../lib/blocks'
 import type { Block, Speakers } from '../../types'
 
 interface Props {
+  projectId: string
   blocks: Block[]
   speakers: Speakers
   page: number
@@ -45,6 +50,7 @@ interface Props {
 }
 
 export default function BlockList({
+  projectId,
   blocks,
   speakers,
   page,
@@ -56,6 +62,38 @@ export default function BlockList({
   onDelete,
   onReorder,
 }: Props) {
+  const [playing, setPlaying] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // The first play of a block synthesizes it; from then on it comes out of the
+  // cache and starts immediately – and the full run gets it for free.
+  const play = async (id: string) => {
+    setPlaying(id)
+    try {
+      const res = await fetch(api.blockAudioUrl(projectId, id))
+      if (!res.ok) {
+        let message = `${res.status} ${res.statusText}`
+        try {
+          const body = await res.json()
+          if (body?.error) message = body.error
+        } catch {
+          /* keep the status text */
+        }
+        throw new Error(message)
+      }
+      const url = URL.createObjectURL(await res.blob())
+      audioRef.current?.pause()
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => URL.revokeObjectURL(url)
+      await audio.play()
+    } catch (e) {
+      notifications.show({ color: 'red', title: 'Block konnte nicht abgespielt werden', message: (e as Error).message })
+    } finally {
+      setPlaying(null)
+    }
+  }
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -122,6 +160,8 @@ export default function BlockList({
                     onSelect={() => onSelect(b.id)}
                     onEdit={() => onEdit(b)}
                     onDelete={() => onDelete(b.id)}
+                    onPlay={() => play(b.id)}
+                    playing={playing === b.id}
                   />
                 ))}
               </Stack>
@@ -141,9 +181,21 @@ interface RowProps {
   onSelect: () => void
   onEdit: () => void
   onDelete: () => void
+  onPlay: () => void
+  playing: boolean
 }
 
-function SortableRow({ block, color, selected, showPage, onSelect, onEdit, onDelete }: RowProps) {
+function SortableRow({
+  block,
+  color,
+  selected,
+  showPage,
+  onSelect,
+  onEdit,
+  onDelete,
+  onPlay,
+  playing,
+}: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
   })
@@ -200,6 +252,18 @@ function SortableRow({ block, color, selected, showPage, onSelect, onEdit, onDel
         </div>
 
         <Stack gap={2}>
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            loading={playing}
+            onClick={(e) => {
+              e.stopPropagation()
+              onPlay()
+            }}
+            aria-label="Block anhören"
+          >
+            <IconPlayerPlay size={14} />
+          </ActionIcon>
           <ActionIcon
             variant="subtle"
             size="sm"

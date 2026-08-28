@@ -5,6 +5,7 @@
  */
 import type {
   Block,
+  CacheStatus,
   Job,
   Project,
   Speakers,
@@ -124,6 +125,14 @@ export const api = {
 
   cancelJob: (id: string, jobId: string) =>
     request<void>(`/projects/${id}/synthesize/${jobId}`, { method: 'DELETE' }),
+
+  /** Audio of a single block – rendered on demand and kept in the cache. */
+  blockAudioUrl: (id: string, blockId: string) =>
+    `${BASE}/projects/${id}/blocks/${blockId}/audio`,
+
+  cacheStatus: (id: string) => request<CacheStatus>(`/projects/${id}/cache`),
+
+  clearCache: (id: string) => request<void>(`/projects/${id}/cache`, { method: 'DELETE' }),
 
   audioUrl: (id: string, jobId: string) => `${BASE}/projects/${id}/audio/${jobId}`,
 }

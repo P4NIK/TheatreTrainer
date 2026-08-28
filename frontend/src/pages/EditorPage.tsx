@@ -297,6 +297,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
               onRectDrawn={onRectDrawn}
             />
             <BlockList
+              projectId={projectId}
               blocks={blocks}
               speakers={speakers}
               page={page}

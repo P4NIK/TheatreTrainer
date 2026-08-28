@@ -335,3 +335,20 @@ func pitchShift(samples []int, rate int, pitch float64) []int {
 	shifted := resample(segment{samples: samples, sampleRate: int(math.Round(float64(rate) * pitch))}, rate)
 	return timeStretch(shifted, rate, pitch)
 }
+
+// encodeWAV writes samples to a temporary file and returns the bytes. The WAV
+// encoder needs an io.WriteSeeker, which a plain buffer is not.
+func encodeWAV(samples []int, sampleRate int) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "theater-*.wav")
+	if err != nil {
+		return nil, err
+	}
+	path := tmp.Name()
+	tmp.Close()
+	defer os.Remove(path)
+
+	if err := writeWAV(path, samples, sampleRate); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}

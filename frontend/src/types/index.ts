@@ -85,6 +85,11 @@ export interface Job {
   status: JobStatus
   total: number
   done: number
+  /** Blocks that had to go through Piper, and blocks taken from the cache. */
+  rendered: number
+  cached: number
+  /** Own-role lines replaced by a pause of the same length. */
+  skippedRole: number
   message: string
   error?: string
   format?: 'wav' | 'mp3'
@@ -95,4 +100,9 @@ export interface Job {
 export interface SynthOptions {
   skipMyRole: boolean
   includeDirections: boolean
+}
+
+export interface CacheStatus {
+  files: number
+  bytes: number
 }

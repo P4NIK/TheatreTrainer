@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -11,10 +11,17 @@ import {
   Text,
   Title,
 } from '@mantine/core'
-import { IconAlertTriangle, IconDownload, IconPlayerPlay } from '@tabler/icons-react'
+import { IconAlertTriangle, IconDatabase, IconDownload, IconPlayerPlay } from '@tabler/icons-react'
 
 import { ApiError, api } from '../../api/client'
-import { DIRECTION_KEY, type Block, type Job, type Project, type Speakers } from '../../types'
+import {
+  DIRECTION_KEY,
+  type Block,
+  type CacheStatus,
+  type Job,
+  type Project,
+  type Speakers,
+} from '../../types'
 
 interface Props {
   project: Project
@@ -31,7 +38,16 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
   const [starting, setStarting] = useState(false)
   const [problems, setProblems] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [cache, setCache] = useState<CacheStatus | null>(null)
   const timer = useRef<number | null>(null)
+
+  const refreshCache = useCallback(() => {
+    api.cacheStatus(project.id).then(setCache).catch(() => setCache(null))
+  }, [project.id])
+
+  useEffect(() => {
+    refreshCache()
+  }, [refreshCache])
 
   useEffect(() => {
     return () => {
@@ -61,6 +77,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
         if (j.status === 'done' || j.status === 'error') {
           if (timer.current) window.clearInterval(timer.current)
           timer.current = null
+          refreshCache()
         }
       } catch (e) {
         setError((e as Error).message)
@@ -110,9 +127,9 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
             disabled={!project.myRole}
             description={
               project.myRole
-                ? myRoleLines === 1
-                  ? '1 Replik wird durch 2,5 s Stille ersetzt.'
-                  : `${myRoleLines} Repliken werden durch 2,5 s Stille ersetzt.`
+                ? `${myRoleLines === 1 ? '1 Replik wird' : `${myRoleLines} Repliken werden`} durch eine Pause ` +
+                  'in Originallänge ersetzt – dein Einsatz kommt also zeitlich richtig. ' +
+                  'Dafür wird deine Rolle mitsynthetisiert; ohne zugewiesene Stimme gibt es 2,5 s Pause.'
                 : undefined
             }
           />
@@ -136,6 +153,28 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
               {missing.map((m) => (m === DIRECTION_KEY ? 'Regieanweisungen' : m)).join(', ')}
             </Alert>
           )}
+
+          <Group gap="xs" align="center">
+            <IconDatabase size={16} opacity={0.6} />
+            <Text size="xs" c="dimmed">
+              {cache && cache.files > 0
+                ? `${cache.files} Blöcke zwischengespeichert (${formatBytes(cache.bytes)}) – nur geänderte Blöcke werden neu erzeugt.`
+                : 'Noch nichts zwischengespeichert – der erste Durchlauf erzeugt alle Blöcke.'}
+            </Text>
+            {cache && cache.files > 0 && (
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                onClick={async () => {
+                  await api.clearCache(project.id).catch(() => undefined)
+                  refreshCache()
+                }}
+              >
+                leeren
+              </Button>
+            )}
+          </Group>
 
           <Group>
             <Button
@@ -229,4 +268,10 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
       )}
     </Stack>
   )
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }

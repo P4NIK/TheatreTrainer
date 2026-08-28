@@ -21,16 +21,23 @@ const (
 
 // Job is the public status of one synthesis run.
 type Job struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"projectId"`
-	Status    string    `json:"status"`
-	Total     int       `json:"total"`
-	Done      int       `json:"done"`
-	Message   string    `json:"message"`
-	Error     string    `json:"error,omitempty"`
-	Format    string    `json:"format,omitempty"` // "wav" or "mp3"
-	StartedAt time.Time `json:"startedAt"`
-	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	ID        string `json:"id"`
+	ProjectID string `json:"projectId"`
+	Status    string `json:"status"`
+	Total     int    `json:"total"`
+	Done      int    `json:"done"`
+	// Rendered counts blocks that had to go through Piper, Cached those that
+	// came from the block cache.
+	Rendered int `json:"rendered"`
+	Cached   int `json:"cached"`
+	// SkippedRole counts own-role lines that were replaced by a pause of the
+	// same length.
+	SkippedRole int        `json:"skippedRole"`
+	Message     string     `json:"message"`
+	Error       string     `json:"error,omitempty"`
+	Format      string     `json:"format,omitempty"` // "wav" or "mp3"
+	StartedAt   time.Time  `json:"startedAt"`
+	EndedAt     *time.Time `json:"endedAt,omitempty"`
 
 	filePath string
 }

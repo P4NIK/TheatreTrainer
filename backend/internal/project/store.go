@@ -257,6 +257,10 @@ func (s *Store) SaveSpeakers(id string, sp Speakers) error {
 // AudioDir is where generated audio files of a project are stored.
 func (s *Store) AudioDir(id string) string { return filepath.Join(s.root, id, "audio") }
 
+// CacheDir holds the per-block audio, so only changed blocks have to be
+// synthesized again.
+func (s *Store) CacheDir(id string) string { return filepath.Join(s.root, id, "cache") }
+
 func (s *Store) readProject(id string) (Project, error) {
 	if !validID(id) {
 		return Project{}, ErrNotFound

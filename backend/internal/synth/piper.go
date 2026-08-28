@@ -164,17 +164,20 @@ const (
 	maxPitch = 1.30
 )
 
-// Synthesize renders one utterance to a temporary WAV file and returns the
-// decoded mono samples together with the model's sample rate.
-//
-// The pitch setting is applied to the finished audio: it is resampled (which
-// moves pitch and formants together – that is what makes a voice sound like a
-// different person rather than a sped-up tape) and then stretched back to its
-// original length, so tempo and pitch stay independent of each other.
-func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
+// NormalizeText collapses the text the way it is handed to Piper. Exported
+// because the cache key has to be built from exactly this string.
+func NormalizeText(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// Render runs Piper and returns its raw output. Everything that can be applied
+// afterwards – volume, pitch, de-clicking – deliberately happens outside, so
+// the expensive part can be cached on its own and a moved slider does not cost
+// another synthesis run.
+func (p *Piper) Render(ctx context.Context, req Request) (segment, error) {
 	// Piper treats every stdin line as a separate utterance, so the text is
 	// collapsed into a single line before it is handed over.
-	text := strings.Join(strings.Fields(req.Text), " ")
+	text := NormalizeText(req.Text)
 	if text == "" {
 		return segment{}, nil
 	}
@@ -207,12 +210,6 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 		args = append(args, "-s", strconv.Itoa(req.SpeakerID))
 	}
 
-	pitch := req.Pitch
-	if pitch <= 0 {
-		pitch = 1.0
-	}
-	pitch = math.Max(minPitch, math.Min(maxPitch, pitch))
-
 	if req.LengthScale > 0 && req.LengthScale != 1.0 {
 		args = append(args, p.cfg.LengthScaleFlag, formatFloat(req.LengthScale))
 	}
@@ -240,21 +237,39 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (segment, error) {
 	if err != nil {
 		return segment{}, err
 	}
+	return seg, nil
+}
+
+// postProcess applies everything that does not need Piper: volume, the pitch
+// shift and the de-clicking of the segment edges.
+//
+// The pitch setting is applied to the finished audio: it is resampled (which
+// moves pitch and formants together – that is what makes a voice sound like a
+// different person rather than a sped-up tape) and then stretched back to its
+// original length, so tempo and pitch stay independent of each other.
+func postProcess(seg segment, req Request) segment {
+	if len(seg.samples) == 0 {
+		return seg
+	}
+	out := segment{samples: append([]int(nil), seg.samples...), sampleRate: seg.sampleRate}
+
 	if req.Volume > 0 && req.Volume != 1.0 {
-		seg.samples = applyVolume(seg.samples, req.Volume)
+		out.samples = applyVolume(out.samples, req.Volume)
 	}
-
-	// Pitch is applied here rather than through Piper: the CLI has no pitch
-	// option, and its length scale turned out not to change the duration
-	// proportionally, so it cannot be used to compensate either.
-	if pitch != 1.0 {
-		seg.samples = pitchShift(seg.samples, seg.sampleRate, pitch)
+	if pitch := clampPitch(req.Pitch); pitch != 1.0 {
+		out.samples = pitchShift(out.samples, out.sampleRate, pitch)
 	}
-
 	// Clean up the joins: several voices carry a DC offset, and a segment that
 	// starts or ends mid-waveform clicks against the surrounding silence.
-	seg.samples = fadeEdges(removeDCOffset(seg.samples), seg.sampleRate, edgeFadeMillis)
-	return seg, nil
+	out.samples = fadeEdges(removeDCOffset(out.samples), out.sampleRate, edgeFadeMillis)
+	return out
+}
+
+func clampPitch(p float64) float64 {
+	if p <= 0 {
+		return 1.0
+	}
+	return math.Max(minPitch, math.Min(maxPitch, p))
 }
 
 // utf8Env returns the parent environment with Python forced into UTF-8 mode.
