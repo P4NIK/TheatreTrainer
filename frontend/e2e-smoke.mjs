@@ -94,6 +94,29 @@ const src = await page.locator('audio').getAttribute('src')
 console.log('   Audio:', src)
 await page.screenshot({ path: '/tmp/shot-audio.png' })
 
+step('Ausschnitt wählen und daraus erzeugen')
+await page.getByText('Seitenbereich').click()
+await page.getByLabel('Von Seite').fill('1')
+await page.getByLabel('Bis Seite').fill('1')
+await page.waitForTimeout(300)
+console.log('   Seiten 1–1:', await page.getByText(/von \d+ Blöcken/).textContent())
+const roleTab = page.getByText(/^Auftritte von /)
+if (await roleTab.count()) {
+  await roleTab.click()
+  await page.waitForTimeout(300)
+  console.log('   Auftritte: ', await page.getByText(/von \d+ Blöcken/).textContent())
+}
+const posted = []
+page.on('request', (r) => {
+  if (r.method() === 'POST' && r.url().includes('/synthesize')) posted.push(r.postData())
+})
+await page.getByRole('button', { name: 'Audio erzeugen' }).click()
+await page.waitForSelector('text=Fertig –', { timeout: 120000 })
+const sent = JSON.parse(posted.at(-1) ?? '{}')
+console.log('   gesendet:', (sent.selection ?? []).length, 'Einträge')
+console.log('   Dateiname:', await page.getByRole('link', { name: /Herunterladen/ }).getAttribute('download'))
+await page.getByText('Ganzes Stück').click()
+
 step('Automatisch erkennen – auch von einem anderen Tab aus')
 // Regression: der Knopf sitzt in der Kopfzeile und ist auf allen Tabs sichtbar,
 // während der PDF-Editor dort ausgehängt ist. Ein von dort geliehenes

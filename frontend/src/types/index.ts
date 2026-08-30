@@ -97,9 +97,20 @@ export interface Job {
   endedAt?: string
 }
 
+/**
+ * One entry of the render list. Either a block of the play, or a short spoken
+ * marker ("Weiter auf Seite 12.") that is read with the stage-direction voice.
+ */
+export interface SelectionItem {
+  blockId?: string
+  announce?: string
+}
+
 export interface SynthOptions {
   skipMyRole: boolean
   includeDirections: boolean
+  /** Restricts the run to a part of the play. Omitted means the whole play. */
+  selection?: SelectionItem[]
 }
 
 export interface CacheStatus {

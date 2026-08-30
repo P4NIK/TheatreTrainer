@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
   Card,
+  Divider,
   Group,
   List,
   Progress,
@@ -15,6 +16,12 @@ import { IconAlertTriangle, IconDatabase, IconDownload, IconPlayerPlay } from '@
 
 import { ApiError, api } from '../../api/client'
 import {
+  buildSelection,
+  defaultSelection,
+  selectionSuffix,
+  type SelectionSettings,
+} from '../../lib/selection'
+import {
   DIRECTION_KEY,
   type Block,
   type CacheStatus,
@@ -22,6 +29,7 @@ import {
   type Project,
   type Speakers,
 } from '../../types'
+import SelectionCard from './SelectionCard'
 
 interface Props {
   project: Project
@@ -34,7 +42,13 @@ interface Props {
 export default function SynthesizePanel({ project, blocks, speakers, onBeforeStart }: Props) {
   const [skipMyRole, setSkipMyRole] = useState(false)
   const [includeDirections, setIncludeDirections] = useState(true)
+  const [selection, setSelection] = useState<SelectionSettings>({
+    ...defaultSelection,
+    toPage: Math.max(1, project.pageCount),
+  })
   const [job, setJob] = useState<Job | null>(null)
+  /** Suffix of the run that produced `job` – the settings may change afterwards. */
+  const [jobSuffix, setJobSuffix] = useState('')
   const [starting, setStarting] = useState(false)
   const [problems, setProblems] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -55,11 +69,19 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
     }
   }, [])
 
-  const lines = blocks.filter((b) => b.type === 'line' && b.text.trim() !== '')
-  const directions = blocks.filter((b) => b.type === 'direction' && b.text.trim() !== '')
+  const picked = useMemo(
+    () => buildSelection(blocks, project, selection),
+    [blocks, project, selection],
+  )
+  /** Everything below counts only what the current selection actually renders. */
+  const inRun = selection.mode === 'all' ? blocks : picked.blocks
+
+  const lines = inRun.filter((b) => b.type === 'line' && b.text.trim() !== '')
+  const directions = inRun.filter((b) => b.type === 'direction' && b.text.trim() !== '')
   const myRoleLines = project.myRole
     ? lines.filter((b) => (b.speaker ?? '').toLowerCase() === project.myRole.toLowerCase()).length
     : 0
+  const announcements = picked.items.filter((i) => i.announce).length
 
   const missing = (() => {
     const need = new Set<string>()
@@ -93,7 +115,14 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
     setError(null)
     try {
       await onBeforeStart()
-      const j = await api.startSynthesis(project.id, { skipMyRole, includeDirections })
+      const j = await api.startSynthesis(project.id, {
+        skipMyRole,
+        includeDirections,
+        // The whole play goes as an empty selection – the server then simply
+        // takes every block in order.
+        selection: selection.mode === 'all' ? undefined : picked.items,
+      })
+      setJobSuffix(selectionSuffix(selection))
       setJob(j)
       poll(j.id)
     } catch (e) {
@@ -116,6 +145,16 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
 
       <Card withBorder padding="md">
         <Stack gap="sm">
+          <SelectionCard
+            project={project}
+            settings={selection}
+            onChange={setSelection}
+            selection={picked}
+            total={blocks.length}
+          />
+
+          <Divider my="xs" />
+
           <Switch
             checked={skipMyRole}
             onChange={(e) => setSkipMyRole(e.currentTarget.checked)}
@@ -144,7 +183,11 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
             }
           />
           <Text size="sm" c="dimmed">
-            {lines.length === 1 ? '1 Sprechblock' : `${lines.length} Sprechblöcke`} insgesamt.
+            {lines.length === 1 ? '1 Sprechblock' : `${lines.length} Sprechblöcke`}
+            {selection.mode === 'all' ? ' insgesamt' : ' in der Auswahl'}
+            {announcements > 0 &&
+              ` · ${announcements === 1 ? '1 Ansage' : `${announcements} Ansagen`}`}
+            .
           </Text>
 
           {missing.length > 0 && (
@@ -254,7 +297,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
                   <Button
                     component="a"
                     href={api.audioUrl(project.id, job.id)}
-                    download={`${project.id}.${job.format ?? 'wav'}`}
+                    download={`${project.id}${jobSuffix}.${job.format ?? 'wav'}`}
                     variant="light"
                     leftSection={<IconDownload size={16} />}
                   >

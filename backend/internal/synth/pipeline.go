@@ -89,7 +89,7 @@ func (s *Service) ReferencedKeys(projectID string) (map[string]bool, error) {
 		// Both switches are deliberately ignored here: a block whose audio is
 		// currently not used keeps its entry, so flipping a switch back is
 		// instant instead of costing another full run.
-		req, ok := requestFor(b, proj, speakers, Options{IncludeDirections: true})
+		req, _, ok := requestFor(b, proj, speakers, Options{IncludeDirections: true})
 		if !ok {
 			continue
 		}
@@ -98,19 +98,40 @@ func (s *Service) ReferencedKeys(projectID string) (map[string]bool, error) {
 	return keys, nil
 }
 
+// ErrEmptySelection means the chosen part of the play contains nothing that
+// can be spoken – a user mistake, not a server fault.
+var ErrEmptySelection = errors.New("die Auswahl enthält keine Blöcke zum Vorlesen")
+
+// SelectionItem picks one entry of the render list: either a block of the play
+// or a spoken marker such as "Weiter auf Seite 31." The frontend decides which
+// part of the play is wanted; the backend only renders the list it gets.
+type SelectionItem struct {
+	BlockID  string `json:"blockId,omitempty"`
+	Announce string `json:"announce,omitempty"`
+}
+
+// planItem is one entry of the render list, ready to synthesize.
+type planItem struct {
+	req Request
+	// skip means: render it anyway (that is the only way to know how long the
+	// pause has to be), but put silence into the file.
+	skip bool
+	// fixedPause is set when a skipped line has no voice at all, so its length
+	// is unknown and the configured fixed pause is used instead.
+	fixedPause bool
+	label      string
+}
+
 // requestFor builds the synthesis request of a block, or reports that the
 // block has no usable voice configuration.
-func requestFor(b project.Block, proj project.Project, speakers project.Speakers, opts Options) (Request, bool) {
-	if strings.TrimSpace(b.Text) == "" {
-		return Request{}, false
-	}
+func requestFor(b project.Block, proj project.Project, speakers project.Speakers, opts Options) (Request, string, bool) {
 	key, _ := speakerKey(b, proj, opts)
-	if key == "" {
-		return Request{}, false
+	if key == "" || strings.TrimSpace(b.Text) == "" {
+		return Request{}, key, false
 	}
 	cfg, ok := speakers[key]
 	if !ok || strings.TrimSpace(cfg.Model) == "" {
-		return Request{}, false
+		return Request{}, key, false
 	}
 	return Request{
 		Text:        b.Text,
@@ -119,7 +140,118 @@ func requestFor(b project.Block, proj project.Project, speakers project.Speakers
 		LengthScale: orDefault(cfg.LengthScale, 1.0),
 		Volume:      orDefault(cfg.Volume, 1.0),
 		Pitch:       orDefault(cfg.Pitch, 1.0),
-	}, true
+	}, key, true
+}
+
+// plan turns a project plus a selection into the list of things to render, and
+// collects everything that would stop the run.
+func (s *Service) plan(projectID string, opts Options, selection []SelectionItem) ([]planItem, []string, error) {
+	proj, err := s.store.Get(projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	blocks, err := s.store.Blocks(projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	speakers, err := s.store.Speakers(projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	installed, err := s.registry.List()
+	if err != nil {
+		return nil, nil, err
+	}
+	known := map[string]bool{}
+	for _, v := range installed {
+		known[v.Name] = true
+	}
+
+	byID := make(map[string]project.Block, len(blocks))
+	for _, b := range blocks {
+		byID[b.ID] = b
+	}
+
+	// Without a selection the whole play is rendered, in order.
+	if len(selection) == 0 {
+		selection = make([]SelectionItem, 0, len(blocks))
+		for _, b := range blocks {
+			selection = append(selection, SelectionItem{BlockID: b.ID})
+		}
+	}
+
+	var items []planItem
+	var problems []string
+	seen := map[string]bool{}
+
+	note := func(label, text string) {
+		if !seen[label+text] {
+			seen[label+text] = true
+			problems = append(problems, label+": "+text)
+		}
+	}
+
+	for _, sel := range selection {
+		if sel.Announce != "" {
+			// Markers are spoken by the stage-direction voice. Without one they
+			// are simply left out – they are an aid, not content.
+			if cfg, ok := speakers[project.DirectionKey]; ok && known[cfg.Model] {
+				items = append(items, planItem{
+					req: Request{
+						Text:        sel.Announce,
+						Model:       cfg.Model,
+						SpeakerID:   cfg.SpeakerID,
+						LengthScale: orDefault(cfg.LengthScale, 1.0),
+						Volume:      orDefault(cfg.Volume, 1.0),
+						Pitch:       orDefault(cfg.Pitch, 1.0),
+					},
+					label: "Sprungmarke",
+				})
+			}
+			continue
+		}
+
+		b, ok := byID[sel.BlockID]
+		if !ok || strings.TrimSpace(b.Text) == "" {
+			continue
+		}
+		if b.Type == project.TypeDirection && !opts.IncludeDirections {
+			continue
+		}
+
+		req, key, hasVoice := requestFor(b, proj, speakers, opts)
+		_, skip := speakerKey(b, proj, opts)
+
+		label := key
+		if label == project.DirectionKey {
+			label = "Regieanweisungen"
+		}
+
+		if !hasVoice {
+			if skip {
+				// A skipped role does not strictly need a voice; without one
+				// the fixed pause stands in for the real length.
+				items = append(items, planItem{skip: true, fixedPause: true, label: label})
+				continue
+			}
+			note(label, "keine Stimme zugewiesen")
+			continue
+		}
+		if !known[req.Model] {
+			note(label, fmt.Sprintf("Modell %q liegt nicht in %s", req.Model, s.registry.Dir()))
+			continue
+		}
+		items = append(items, planItem{req: req, skip: skip, label: label})
+	}
+
+	sort.Strings(problems)
+	return items, problems, nil
+}
+
+// Validate reports what would stop a run – missing voices above all.
+func (s *Service) Validate(projectID string, opts Options, selection []SelectionItem) ([]string, error) {
+	_, problems, err := s.plan(projectID, opts, selection)
+	return problems, err
 }
 
 // RenderSingleBlock produces the audio of one block for playback in the
@@ -142,7 +274,7 @@ func (s *Service) RenderSingleBlock(ctx context.Context, projectID, blockID stri
 		if b.ID != blockID {
 			continue
 		}
-		req, ok := requestFor(b, proj, speakers, Options{IncludeDirections: true})
+		req, _, ok := requestFor(b, proj, speakers, Options{IncludeDirections: true})
 		if !ok {
 			return nil, fmt.Errorf("für diesen Block ist keine Stimme konfiguriert")
 		}
@@ -170,91 +302,22 @@ func (s *Service) Preview(ctx context.Context, req Request) ([]byte, error) {
 	return encodeWAV(resample(seg, s.cfg.SampleRate), s.cfg.SampleRate)
 }
 
-// Validate checks that every speaker that will actually be spoken has a voice
-// model assigned and that the model exists on disk. It returns a list of
-// human readable problems (empty = ready to synthesize).
-func (s *Service) Validate(projectID string, opts Options) ([]string, error) {
-	proj, err := s.store.Get(projectID)
-	if err != nil {
-		return nil, err
-	}
-	blocks, err := s.store.Blocks(projectID)
-	if err != nil {
-		return nil, err
-	}
-	speakers, err := s.store.Speakers(projectID)
-	if err != nil {
-		return nil, err
-	}
-
-	installed, err := s.registry.List()
-	if err != nil {
-		return nil, err
-	}
-	known := map[string]bool{}
-	for _, v := range installed {
-		known[v.Name] = true
-	}
-
-	seen := map[string]bool{}
-	var problems []string
-	for _, b := range blocks {
-		if strings.TrimSpace(b.Text) == "" {
-			continue
-		}
-		key, skip := speakerKey(b, proj, opts)
-		if skip || key == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		label := key
-		if key == project.DirectionKey {
-			label = "Regieanweisungen"
-		}
-		cfg, ok := speakers[key]
-		if !ok || strings.TrimSpace(cfg.Model) == "" {
-			problems = append(problems, fmt.Sprintf("%s: keine Stimme zugewiesen", label))
-			continue
-		}
-		if !known[cfg.Model] {
-			problems = append(problems, fmt.Sprintf("%s: Modell %q liegt nicht in %s", label, cfg.Model, s.registry.Dir()))
-		}
-	}
-	sort.Strings(problems)
-	return problems, nil
-}
-
 // Start kicks off an asynchronous synthesis job and returns immediately.
-func (s *Service) Start(projectID string, opts Options) (Job, error) {
+// An empty selection means the whole play.
+func (s *Service) Start(projectID string, opts Options, selection []SelectionItem) (Job, error) {
 	proj, err := s.store.Get(projectID)
 	if err != nil {
 		return Job{}, err
 	}
-	blocks, err := s.store.Blocks(projectID)
+	items, _, err := s.plan(projectID, opts, selection)
 	if err != nil {
 		return Job{}, err
 	}
-	speakers, err := s.store.Speakers(projectID)
-	if err != nil {
-		return Job{}, err
+	if len(items) == 0 {
+		return Job{}, ErrEmptySelection
 	}
 
-	todo := make([]project.Block, 0, len(blocks))
-	for _, b := range blocks {
-		if strings.TrimSpace(b.Text) == "" {
-			continue
-		}
-		if b.Type == project.TypeDirection && !opts.IncludeDirections {
-			continue
-		}
-		todo = append(todo, b)
-	}
-	if len(todo) == 0 {
-		return Job{}, errors.New("keine Blöcke zum Vorlesen vorhanden")
-	}
-
-	job := s.Jobs.create(projectID, len(todo))
+	job := s.Jobs.create(projectID, len(items))
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Jobs.mu.Lock()
 	s.Jobs.cancel[job.ID] = cancel
@@ -262,14 +325,12 @@ func (s *Service) Start(projectID string, opts Options) (Job, error) {
 
 	go func() {
 		defer cancel()
-		s.run(ctx, job.ID, proj, todo, speakers, opts)
+		s.run(ctx, job.ID, proj, items)
 	}()
 	return *job, nil
 }
 
-func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
-	blocks []project.Block, speakers project.Speakers, opts Options) {
-
+func (s *Service) run(ctx context.Context, jobID string, proj project.Project, items []planItem) {
 	s.Jobs.update(jobID, func(j *Job) {
 		j.Status = StatusRunning
 		j.Message = "Synthese läuft"
@@ -290,8 +351,11 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 	gap := silence(s.cfg.GapMillis, rate)
 	cache := s.Cache(proj.ID)
 	rendered, fromCache, skippedRole, fixedPauses := 0, 0, 0, 0
+	// Jump markers belong to no block, so the block-based garbage collection
+	// below would throw them away right after producing them.
+	usedKeys := map[string]bool{}
 
-	for i, b := range blocks {
+	for i, item := range items {
 		select {
 		case <-ctx.Done():
 			fail(errors.New("Job abgebrochen"))
@@ -299,40 +363,13 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 		default:
 		}
 
-		key, skip := speakerKey(b, proj, opts)
-		if key == "" {
+		if item.fixedPause {
+			all = append(all, silence(s.cfg.SkippedRoleMillis, rate)...)
+			all = append(all, gap...)
+			skippedRole++
+			fixedPauses++
+			s.progress(jobID, i+1, rendered, fromCache, "Pause für die eigene Rolle")
 			continue
-		}
-		cfg, ok := speakers[key]
-		hasVoice := ok && strings.TrimSpace(cfg.Model) != ""
-
-		if !hasVoice {
-			// A skipped role does not strictly need a voice. Without one the
-			// length of the line is unknown, so the fixed pause is used and
-			// the job says so at the end.
-			if skip {
-				all = append(all, silence(s.cfg.SkippedRoleMillis, rate)...)
-				all = append(all, gap...)
-				skippedRole++
-				fixedPauses++
-				s.progress(jobID, i+1, rendered, fromCache, "Pause für die eigene Rolle")
-				continue
-			}
-			label := key
-			if label == project.DirectionKey {
-				label = "Regieanweisungen"
-			}
-			fail(fmt.Errorf("Block %d: für %q ist keine Stimme konfiguriert", i+1, label))
-			return
-		}
-
-		req := Request{
-			Text:        b.Text,
-			Model:       cfg.Model,
-			SpeakerID:   cfg.SpeakerID,
-			LengthScale: orDefault(cfg.LengthScale, 1.0),
-			Volume:      orDefault(cfg.Volume, 1.0),
-			Pitch:       orDefault(cfg.Pitch, 1.0),
 		}
 
 		// Your own lines are synthesized as well, even when they are skipped:
@@ -340,11 +377,12 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 		// the length of the line, so the cue comes at the right moment – and
 		// the audio is in the cache, which makes switching the option back
 		// instant.
-		seg, hit, err := s.renderBlock(ctx, cache, req)
+		seg, hit, err := s.renderBlock(ctx, cache, item.req)
 		if err != nil {
-			fail(fmt.Errorf("Block %d (%s): %w", i+1, key, err))
+			fail(fmt.Errorf("Block %d (%s): %w", i+1, item.label, err))
 			return
 		}
+		usedKeys[Key(item.req)] = true
 		if hit {
 			fromCache++
 		} else {
@@ -352,7 +390,7 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 		}
 
 		samples := resample(seg, rate)
-		if skip {
+		if item.skip {
 			samples = make([]int, len(samples))
 			skippedRole++
 		}
@@ -360,8 +398,9 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 		all = append(all, gap...)
 
 		s.progress(jobID, i+1, rendered, fromCache,
-			fmt.Sprintf("%d/%d – %d neu, %d aus dem Zwischenspeicher", i+1, len(blocks), rendered, fromCache))
+			fmt.Sprintf("%d/%d – %d neu, %d aus dem Zwischenspeicher", i+1, len(items), rendered, fromCache))
 	}
+
 	outDir := s.store.AudioDir(proj.ID)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		fail(err)
@@ -381,6 +420,9 @@ func (s *Service) run(ctx context.Context, jobID string, proj project.Project,
 
 	// Entries that no block refers to any more would otherwise pile up.
 	if keys, err := s.ReferencedKeys(proj.ID); err == nil {
+		for k := range usedKeys {
+			keys[k] = true
+		}
 		if n := cache.KeepOnly(keys); n > 0 {
 			log.Printf("Zwischenspeicher: %d verwaiste Dateien entfernt", n)
 		}

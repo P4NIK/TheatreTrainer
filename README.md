@@ -28,6 +28,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   mehrere Rollen aus einer einzigen guten Stimme besetzen
 - Eigene Rolle markieren und beim Erzeugen durch eine Pause **in Originallänge**
   ersetzen – der Einsatz kommt dadurch zeitlich richtig
+- Nur einen Ausschnitt erzeugen: ein Seitenbereich (z. B. Akt 1) oder alle
+  Stellen, an denen die eigene Rolle auf der Bühne steht – samt Stichwort davor
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -220,7 +222,8 @@ cd ../backend && go run ./cmd/server
    Lautstärke einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die
    eigene Rolle markieren. Zum Besetzen mehrerer Rollen siehe „Welche deutsche
    Stimme?“.
-5. **Hörfassung** – Schalter für „eigene Rolle aussparen“ und
+5. **Hörfassung** – oben auswählen, welcher Teil des Stücks erzeugt werden soll
+   (siehe unten), darunter die Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
    im Browser anhören oder herunterladen.
 
@@ -331,6 +334,42 @@ verweist. Der Hörfassungs-Tab zeigt Anzahl und Größe und hat einen Knopf zum
 Leeren. Als Größenordnung: Ein abendfüllendes Stück mit rund 1400 Blöcken
 belegt etwa 250 MB. Der Ordner liegt unter `data/` und damit in `.gitignore`.
 
+### Nur einen Teil des Stücks erzeugen
+
+Ein ganzes Stück dauert schnell eine Stunde. Für die Probe von morgen reicht
+meist ein Ausschnitt, deshalb hat der Hörfassungs-Tab drei Betriebsarten:
+
+| Auswahl | Wofür |
+|---|---|
+| **Ganzes Stück** | alle Blöcke in Vorlese-Reihenfolge |
+| **Seitenbereich** | „von Seite … bis Seite …“ – so schneidest du einen Akt oder eine Szene heraus |
+| **Auftritte von \<Rolle\>** | nur die Stellen, an denen deine Rolle spricht, jeweils mit ein paar Blöcken davor und danach |
+
+Bei „Auftritte“ steuern drei Zahlen den Zuschnitt:
+
+- **Blöcke davor** – dein Stichwort. Zwei Repliken Vorlauf reichen meist, um
+  den Einsatz zu erkennen.
+- **Blöcke danach** – wie viel nach deiner letzten Replik noch mitläuft.
+- **Lücke überbrücken** – liegen zwei Auftritte weniger als so viele Blöcke
+  auseinander, wird nicht geschnitten, sondern durchgelesen. Das verhindert,
+  dass ein dichter Dialog in ein Dutzend Schnipsel zerfällt.
+
+Wo etwas übersprungen wurde, spricht die App auf Wunsch eine kurze Sprungmarke
+(„Weiter auf Seite 31.“) ein – mit der Stimme für Regieanweisungen, damit sie
+sich klar vom Stück abhebt. Ist dafür keine Stimme eingestellt, entfällt die
+Ansage ersatzlos; sie ist eine Orientierungshilfe, kein Inhalt.
+
+Die Auswahl ändert nichts an den gespeicherten Blöcken – sie legt nur fest,
+was in diesen einen Durchlauf kommt. Zusammen mit dem Zwischenspeicher heißt
+das: Ist das ganze Stück einmal erzeugt, kostet ein Ausschnitt daraus nur noch
+das Zusammenfügen. Der Dateiname des Downloads nennt den Ausschnitt
+(`<projekt>-seiten-12-18.mp3`, `<projekt>-auftritte.mp3`), damit mehrere
+Fassungen nebeneinander liegen können.
+
+Berechnet wird die Auswahl im Frontend (`frontend/src/lib/selection.ts`); an
+den Server geht nur die fertige Liste aus Block-IDs und Sprungmarken. Der
+Server rendert, was in der Liste steht, in genau dieser Reihenfolge.
+
 ### Die eigene Rolle als Pause
 
 Ist „eigene Rolle aussparen“ aktiv, wird deine Rolle trotzdem synthetisiert –
@@ -375,7 +414,7 @@ backend/
 frontend/
   src/api/            # typisierter API-Client
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig, SynthesizePanel
-  src/lib/            # Textextraktion aus dem PDF, Block-Hilfsfunktionen
+  src/lib/            # Textextraktion aus dem PDF, Blockerkennung, Auswahl
   src/pages/          # Projektliste und Editor
 ```
 
@@ -395,7 +434,7 @@ frontend/
 | `GET`/`PUT` | `/api/projects/{id}/speakers` | Sprecher-Konfiguration |
 | `GET` | `/api/voices` | installierte Piper-Modelle |
 | `POST` | `/api/voices/preview` | Hörprobe synthetisieren (WAV) |
-| `POST` | `/api/projects/{id}/synthesize` | Job starten, liefert `jobId` |
+| `POST` | `/api/projects/{id}/synthesize` | Job starten, liefert `jobId`; Body: `skipMyRole`, `includeDirections`, optional `selection` |
 | `GET` | `/api/projects/{id}/synthesize/{jobId}` | Job-Status |
 | `DELETE` | `/api/projects/{id}/synthesize/{jobId}` | Job abbrechen |
 | `GET` | `/api/projects/{id}/audio/{jobId}` | fertige Datei streamen |
@@ -438,8 +477,12 @@ sortieren; die Nummer am Rahmen zeigt die Vorlese-Position.
 Backend bauen und prüfen:
 
 ```bash
-cd backend && go vet ./... && go build ./...
+cd backend && go vet ./... && go test ./... && go build ./...
 ```
+
+`go test` prüft die Audio-Bausteine (Resampling, Zeitdehnung, Tonhöhe), den
+Zwischenspeicher und die Zusammenstellung eines Durchlaufs: Reihenfolge der
+Auswahl, Sprungmarken, ausgesparte eigene Repliken, fehlende Stimmen.
 
 Frontend typprüfen, testen und bauen:
 
@@ -447,9 +490,11 @@ Frontend typprüfen, testen und bauen:
 cd frontend && npm test && npm run build
 ```
 
-`npm test` prüft vor allem die automatische Blockerkennung – Sprechernamen, die
-als zwei Textstücke gesetzt sind, Regieanweisungen, die mit einem Rollennamen
-beginnen, Repliken über Seitengrenzen, Seitenzahlen.
+`npm test` prüft die automatische Blockerkennung – Sprechernamen, die als zwei
+Textstücke gesetzt sind, Regieanweisungen, die mit einem Rollennamen beginnen,
+Repliken über Seitengrenzen, Seitenzahlen – und die Auswahl eines Ausschnitts:
+Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
+Auftritte und die Sprungmarken.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):

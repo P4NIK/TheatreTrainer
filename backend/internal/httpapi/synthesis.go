@@ -78,6 +78,8 @@ func (a *API) previewVoice(w http.ResponseWriter, r *http.Request) {
 type synthRequest struct {
 	SkipMyRole        bool `json:"skipMyRole"`
 	IncludeDirections bool `json:"includeDirections"`
+	// Selection restricts the run to a part of the play. Empty means all of it.
+	Selection []synth.SelectionItem `json:"selection,omitempty"`
 }
 
 func (a *API) startSynthesis(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +94,7 @@ func (a *API) startSynthesis(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := synth.Options{SkipMyRole: req.SkipMyRole, IncludeDirections: req.IncludeDirections}
 
-	problems, err := a.synth.Validate(id, opts)
+	problems, err := a.synth.Validate(id, opts, req.Selection)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -111,8 +113,12 @@ func (a *API) startSynthesis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := a.synth.Start(id, opts)
+	job, err := a.synth.Start(id, opts, req.Selection)
 	if err != nil {
+		if errors.Is(err, synth.ErrEmptySelection) {
+			writeError(w, http.StatusUnprocessableEntity, err)
+			return
+		}
 		storeError(w, err)
 		return
 	}
