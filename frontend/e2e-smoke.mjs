@@ -99,13 +99,30 @@ await page.getByText('Seitenbereich').click()
 await page.getByLabel('Von Seite').fill('1')
 await page.getByLabel('Bis Seite').fill('1')
 await page.waitForTimeout(300)
-console.log('   Seiten 1–1:', await page.getByText(/von \d+ Blöcken/).textContent())
+const summary = page.getByText(/^\d+ von \d+ Blöcken$/)
+console.log('   Seiten 1–1:', await summary.textContent())
 const roleTab = page.getByText(/^Auftritte von /)
 if (await roleTab.count()) {
   await roleTab.click()
   await page.waitForTimeout(300)
-  console.log('   Auftritte: ', await page.getByText(/von \d+ Blöcken/).textContent())
+  console.log('   Auftritte: ', await summary.textContent())
 }
+
+step('Einzelne Blöcke von Hand wählen')
+await page.getByRole('button', { name: 'einzeln nachjustieren' }).click()
+await page.waitForTimeout(300)
+await page.getByRole('button', { name: 'Blöcke auswählen' }).click()
+const picker = page.locator('.mantine-Modal-content')
+await picker.waitFor()
+await picker.getByRole('button', { name: 'Sichtbare abwählen' }).click()
+const boxes = picker.locator('input[type=checkbox]')
+await boxes.first().click()
+await boxes.nth(Math.min(1, (await boxes.count()) - 1)).click({ modifiers: ['Shift'] })
+console.log('   im Dialog:', await picker.getByText(/von \d+ Blöcken gewählt/).textContent())
+await picker.getByRole('button', { name: 'Übernehmen' }).click()
+await page.waitForTimeout(300)
+console.log('   Einzelauswahl:', await summary.textContent())
+
 const posted = []
 page.on('request', (r) => {
   if (r.method() === 'POST' && r.url().includes('/synthesize')) posted.push(r.postData())

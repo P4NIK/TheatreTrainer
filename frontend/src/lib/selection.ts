@@ -1,17 +1,18 @@
 /**
  * Picking a part of the play instead of the whole thing.
  *
- * Two things are wanted in practice: a plain range ("only act one", which in
- * the script is a range of pages), and everything around one's own role, with
- * a couple of lines of lead-in so the cue is there. Both end up as the same
- * thing – a list of blocks, plus optional spoken markers where something was
- * left out, so it stays clear where in the play you are.
+ * Three things are wanted in practice: a plain range ("only act one", which in
+ * the script is a range of pages), everything around one's own role with a
+ * couple of lines of lead-in so the cue is there, and – when neither grid
+ * fits – a hand-picked set of blocks. All three end up as the same thing: a
+ * list of blocks, plus optional spoken markers where something was left out,
+ * so it stays clear where in the play you are.
  */
 import type { Block, Project, SelectionItem } from '../types'
 
 export type { SelectionItem }
 
-export type SelectionMode = 'all' | 'pages' | 'role'
+export type SelectionMode = 'all' | 'pages' | 'role' | 'blocks'
 
 export interface SelectionSettings {
   mode: SelectionMode
@@ -23,6 +24,8 @@ export interface SelectionSettings {
   trail: number
   /** Two stretches closer than this many blocks are joined instead of split. */
   mergeGap: number
+  /** Hand-picked block IDs, used by mode 'blocks'. Order does not matter. */
+  blockIds: string[]
   /** Announce the page before every stretch that does not follow the previous one. */
   announce: boolean
 }
@@ -52,6 +55,7 @@ export const defaultSelection: SelectionSettings = {
   lead: 2,
   trail: 1,
   mergeGap: 3,
+  blockIds: [],
   announce: true,
 }
 
@@ -103,6 +107,17 @@ function assemble(all: Block[], ranges: [number, number][], announce: boolean): 
   return { items, blocks, stretches, omitted: all.length - blocks.length }
 }
 
+/** Turns a sorted list of indices into runs of directly neighbouring ones. */
+function runs(indices: number[]): [number, number][] {
+  const out: [number, number][] = []
+  for (const i of indices) {
+    const last = out[out.length - 1]
+    if (last && i === last[1] + 1) last[1] = i
+    else out.push([i, i])
+  }
+  return out
+}
+
 /** Merges ranges that overlap or sit closer together than `mergeGap` blocks. */
 function mergeRanges(ranges: [number, number][], mergeGap: number): [number, number][] {
   const sorted = [...ranges].sort((a, b) => a[0] - b[0])
@@ -143,6 +158,20 @@ export function buildSelection(
     return assemble(all, [[first, last]], false)
   }
 
+  if (settings.mode === 'blocks') {
+    // Hand-picked: take exactly these blocks, in the play's own order. Blocks
+    // that were deleted in the meantime simply drop out.
+    const wanted = new Set(settings.blockIds)
+    const picked = all.map((b, i) => (wanted.has(b.id) ? i : -1)).filter((i) => i >= 0)
+    if (picked.length === 0) return { items: [], blocks: [], stretches: [], omitted: all.length }
+
+    const selection = assemble(all, runs(picked), settings.announce)
+    for (const s of selection.stretches) {
+      s.ownLines = all.slice(s.from, s.to + 1).filter((b) => isOwnLine(b, project.myRole)).length
+    }
+    return selection
+  }
+
   // mode 'role'
   const own = all
     .map((b, i) => (isOwnLine(b, project.myRole) ? i : -1))
@@ -177,5 +206,6 @@ export function selectionSuffix(settings: SelectionSettings): string {
     return from === to ? `-seite-${from}` : `-seiten-${from}-${to}`
   }
   if (settings.mode === 'role') return '-auftritte'
+  if (settings.mode === 'blocks') return '-auswahl'
   return ''
 }

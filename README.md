@@ -28,8 +28,9 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   mehrere Rollen aus einer einzigen guten Stimme besetzen
 - Eigene Rolle markieren und beim Erzeugen durch eine Pause **in Originallänge**
   ersetzen – der Einsatz kommt dadurch zeitlich richtig
-- Nur einen Ausschnitt erzeugen: ein Seitenbereich (z. B. Akt 1) oder alle
-  Stellen, an denen die eigene Rolle auf der Bühne steht – samt Stichwort davor
+- Nur einen Ausschnitt erzeugen: ein Seitenbereich (z. B. Akt 1), alle Stellen,
+  an denen die eigene Rolle auf der Bühne steht – samt Stichwort davor – oder
+  eine von Hand angehakte Auswahl einzelner Blöcke
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -337,13 +338,14 @@ belegt etwa 250 MB. Der Ordner liegt unter `data/` und damit in `.gitignore`.
 ### Nur einen Teil des Stücks erzeugen
 
 Ein ganzes Stück dauert schnell eine Stunde. Für die Probe von morgen reicht
-meist ein Ausschnitt, deshalb hat der Hörfassungs-Tab drei Betriebsarten:
+meist ein Ausschnitt, deshalb hat der Hörfassungs-Tab vier Betriebsarten:
 
 | Auswahl | Wofür |
 |---|---|
 | **Ganzes Stück** | alle Blöcke in Vorlese-Reihenfolge |
 | **Seitenbereich** | „von Seite … bis Seite …“ – so schneidest du einen Akt oder eine Szene heraus |
 | **Auftritte von \<Rolle\>** | nur die Stellen, an denen deine Rolle spricht, jeweils mit ein paar Blöcken davor und danach |
+| **Einzelne Blöcke** | genau die Blöcke, die du von Hand angehakt hast |
 
 Bei „Auftritte“ steuern drei Zahlen den Zuschnitt:
 
@@ -363,8 +365,27 @@ Die Auswahl ändert nichts an den gespeicherten Blöcken – sie legt nur fest,
 was in diesen einen Durchlauf kommt. Zusammen mit dem Zwischenspeicher heißt
 das: Ist das ganze Stück einmal erzeugt, kostet ein Ausschnitt daraus nur noch
 das Zusammenfügen. Der Dateiname des Downloads nennt den Ausschnitt
-(`<projekt>-seiten-12-18.mp3`, `<projekt>-auftritte.mp3`), damit mehrere
-Fassungen nebeneinander liegen können.
+(`<projekt>-seiten-12-18.mp3`, `<projekt>-auftritte.mp3`,
+`<projekt>-auswahl.mp3`), damit mehrere Fassungen nebeneinander liegen können.
+
+#### Einzelne Blöcke von Hand wählen
+
+Wenn weder eine Seitenspanne noch „meine Auftritte“ passt – die halbe Szene,
+die drei Repliken vor dem Monolog – hakst du die Blöcke direkt an. „Blöcke
+auswählen“ öffnet die Liste des Stücks in Vorlese-Reihenfolge, nach Seiten
+gruppiert und mit Sprecher-Chip; deine eigene Rolle ist grün hervorgehoben.
+
+- **Suchen**, **Sprecher** und **Seite von/bis** blenden ein, worum es gerade
+  geht. „Sichtbare wählen“ und „Sichtbare abwählen“ wirken genau auf das
+  Eingeblendete – erst nach Sprecher filtern, dann alles wählen, ist der
+  schnellste Weg zu „alle Repliken von Jeremy“.
+- **Umschalt-Klick** wählt vom letzten Klick bis hierher. Eine Szene ist damit
+  zwei Klicks weit weg statt dreißig.
+- „Abbrechen“ verwirft die Änderungen, „Übernehmen“ setzt sie.
+
+Praktischster Einstieg: erst grob mit „Seitenbereich“ oder „Auftritte“ wählen,
+dann auf **einzeln nachjustieren** klicken. Die grobe Auswahl wandert in die
+Einzelauswahl, und du entfernst oder ergänzt nur noch, was fehlt.
 
 Berechnet wird die Auswahl im Frontend (`frontend/src/lib/selection.ts`); an
 den Server geht nur die fertige Liste aus Block-IDs und Sprungmarken. Der
@@ -494,7 +515,7 @@ cd frontend && npm test && npm run build
 Textstücke gesetzt sind, Regieanweisungen, die mit einem Rollennamen beginnen,
 Repliken über Seitengrenzen, Seitenzahlen – und die Auswahl eines Ausschnitts:
 Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
-Auftritte und die Sprungmarken.
+Auftritte, die Einzelauswahl und die Sprungmarken.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):

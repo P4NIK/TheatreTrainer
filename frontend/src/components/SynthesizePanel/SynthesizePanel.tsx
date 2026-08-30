@@ -147,6 +147,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
         <Stack gap="sm">
           <SelectionCard
             project={project}
+            blocks={blocks}
             settings={selection}
             onChange={setSelection}
             selection={picked}

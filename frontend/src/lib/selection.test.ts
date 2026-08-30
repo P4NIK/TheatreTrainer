@@ -149,6 +149,50 @@ describe('buildSelection – meine Auftritte', () => {
   })
 })
 
+describe('buildSelection – einzelne Blöcke', () => {
+  const blocks = play(['A', 'B', 'C', 'D', 'E', 'F'], 2) // 2 Blöcke je Seite
+
+  it('nimmt genau die gewählten Blöcke in der Reihenfolge des Stücks', () => {
+    const sel = buildSelection(
+      blocks,
+      project,
+      settings({ mode: 'blocks', blockIds: ['b5', 'b1', 'b2'], announce: false }),
+    )
+
+    expect(sel.blocks.map((b) => b.order)).toEqual([1, 2, 5])
+    expect(sel.omitted).toBe(3)
+  })
+
+  it('kündigt die Seite an, wo etwas übersprungen wurde', () => {
+    const sel = buildSelection(
+      blocks,
+      project,
+      settings({ mode: 'blocks', blockIds: ['b1', 'b2', 'b5'], announce: true }),
+    )
+
+    // b1/b2 stehen am Anfang – davor fehlt nichts. Vor b5 klafft eine Lücke.
+    const announcements = sel.items.filter((i) => i.announce)
+    expect(announcements).toHaveLength(1)
+    expect(announcements[0].announce).toBe('Weiter auf Seite 3.')
+    expect(sel.stretches).toHaveLength(2)
+  })
+
+  it('ignoriert Blöcke, die es nicht mehr gibt', () => {
+    const sel = buildSelection(
+      blocks,
+      project,
+      settings({ mode: 'blocks', blockIds: ['b2', 'geloescht'], announce: false }),
+    )
+    expect(sel.blocks.map((b) => b.id)).toEqual(['b2'])
+  })
+
+  it('liefert nichts, wenn nichts gewählt ist', () => {
+    const sel = buildSelection(blocks, project, settings({ mode: 'blocks', blockIds: [] }))
+    expect(sel.blocks).toHaveLength(0)
+    expect(sel.items).toHaveLength(0)
+  })
+})
+
 describe('selectionSuffix', () => {
   it('bleibt leer für das ganze Stück', () => {
     expect(selectionSuffix(settings({ mode: 'all' }))).toBe('')
@@ -167,5 +211,9 @@ describe('selectionSuffix', () => {
 
   it('markiert die Auftritte', () => {
     expect(selectionSuffix(settings({ mode: 'role' }))).toBe('-auftritte')
+  })
+
+  it('markiert die Einzelauswahl', () => {
+    expect(selectionSuffix(settings({ mode: 'blocks' }))).toBe('-auswahl')
   })
 })
