@@ -139,14 +139,28 @@ export default function EditorPage({ projectId, onBack }: Props) {
     })
   }
 
-  const saveDraft = (block: Block) => {
-    const exists = blocks.some((b) => b.id === block.id)
+  /**
+   * Takes the result of the edit dialog. That is normally one block, but a
+   * block that mixed speech and stage directions comes back as several – the
+   * first one keeps the id, the rest slot in behind it.
+   */
+  const saveDraft = (parts: Block[]) => {
+    if (parts.length === 0) return
+    const first = parts[0]
+    const exists = blocks.some((b) => b.id === first.id)
     const next = exists
-      ? blocks.map((b) => (b.id === block.id ? block : b))
-      : [...blocks, block]
+      ? blocks.flatMap((b) => (b.id === first.id ? parts : [b]))
+      : [...blocks, ...parts]
     mutateBlocks(renumber([...next].sort((a, b) => a.order - b.order)))
-    setSelectedId(block.id)
+    setSelectedId(first.id)
     setDraft(null)
+    if (parts.length > 1) {
+      notifications.show({
+        color: 'green',
+        title: 'Block aufgeteilt',
+        message: `Aus einem Block wurden ${parts.length}: Sprechtext und Regieanweisungen sind jetzt getrennt.`,
+      })
+    }
   }
 
   const deleteBlock = (id: string) => {

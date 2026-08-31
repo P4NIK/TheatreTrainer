@@ -77,6 +77,45 @@ export function blockColor(block: Block, speakers: Speakers): string {
   return '#343a40'
 }
 
+/** True when the text carries a parenthesised insert, i.e. a stage direction. */
+export function hasParentheticals(text: string): boolean {
+  return /\([^)]*\)/.test(text)
+}
+
+/**
+ * Turns one block that mixes speech and parenthesised stage directions into
+ * several blocks – one per part, in the original order.
+ *
+ * A printed script writes both into the same line ("Wer ist das? (Er tritt ans
+ * Fenster.) Nur der junge Warrender."), but for reading aloud they are two
+ * different things: the speech belongs to the character's voice, the insert to
+ * the stage-direction voice. Only splitting them gives each its own.
+ *
+ * The first part keeps the block's id, so an edit stays an edit; the rest are
+ * new blocks slotted in directly behind it. All of them keep the rectangle of
+ * the original – they really do come from the same spot on the page.
+ */
+export function splitBlockAtParens(block: Block): Block[] {
+  const parts = splitParens(block.text)
+    .map((p) => ({
+      direction: p.paren,
+      text: (p.paren ? p.text.replace(/^\(|\)$/g, '') : p.text).trim(),
+    }))
+    .filter((p) => p.text !== '')
+
+  if (parts.length < 2) return [block]
+
+  return parts.map((p, i) => ({
+    ...block,
+    id: i === 0 ? block.id : newBlockId(),
+    // Fractional steps keep the parts together until the list is renumbered.
+    order: block.order + i / (parts.length + 1),
+    type: p.direction ? 'direction' : block.type,
+    speaker: p.direction ? null : block.speaker,
+    text: p.text,
+  }))
+}
+
 /**
  * Splits a text into normal parts and parenthesised parts so the UI can show
  * stage-like inserts in italics. Purely visual – the stored text is unchanged.

@@ -144,7 +144,9 @@ await page.getByRole('button', { name: 'Automatisch erkennen' }).click()
 await page.waitForSelector('.mantine-Modal-content')
 await page.waitForFunction(() => /gelernt|geraten/.test(document.body.innerText), null, { timeout: 30000 })
 await page.getByRole('button', { name: 'Durchsuchen' }).click()
-await page.waitForFunction(() => /Sprechtext|fehlgeschlagen/i.test(document.body.innerText), null, { timeout: 60000 })
+// Auf das Ergebnis-Badge warten, nicht auf das Wort "Sprechtext" – das steht
+// inzwischen auch in der Beschriftung der Optionen.
+await page.waitForFunction(() => /\d+ Sprechtext|fehlgeschlagen/i.test(document.body.innerText), null, { timeout: 60000 })
 const detectText = await page.locator('.mantine-Modal-content').innerText()
 if (detectText.includes('fehlgeschlagen')) {
   errors.push('Automatische Erkennung: ' + detectText.split('\n').find((l) => l.includes('Cannot') || l.includes('fehlgeschlagen')))

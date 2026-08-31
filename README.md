@@ -20,7 +20,9 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Sprechername wird aus Mustern wie `HUGO: …` automatisch vorgeschlagen
 - Automatische Blockerkennung für das ganze Stück: Das Spaltenraster wird aus
   den von Hand gezeichneten Blöcken gelernt
-- Regieanweisungen als eigener Blocktyp (eigene Stimme, eigenes Tempo)
+- Regieanweisungen als eigener Blocktyp (eigene Stimme, eigenes Tempo) –
+  eingeklammerte Einschübe im Sprechtext lassen sich entfernen oder in eigene
+  Blöcke auftrennen
 - Vorlese-Reihenfolge per Drag & Drop änderbar – wichtig bei mehrspaltigem
   Layout
 - Pro Sprecher: Stimm-Modell, Sprecher-ID (bei Multi-Speaker-Modellen),
@@ -252,8 +254,9 @@ Was dabei automatisch passiert:
 - Seitenzahlen und zentrierte Überschriften („Erster Akt“) werden ignoriert.
 - Seiten ohne Dialog – Titelei, Rechtehinweise, Personenverzeichnis – werden
   übersprungen (abschaltbar).
-- Eingeklammerte Einschübe wie „(kostet)“ fliegen aus dem Sprechtext
-  (abschaltbar) – sonst liest die Stimme sie mit.
+- Eingeklammerte Einschübe wie „(kostet)“ fliegen aus dem Sprechtext. Zur
+  Auswahl stehen außerdem „als eigene Blöcke“ – dann liest sie die
+  Regie-Stimme – und „im Text lassen“ (siehe unten).
 - Bereiche, auf denen schon ein Block liegt, bleiben unangetastet. Ein zweiter
   Durchlauf ändert also nichts, und ein halb bearbeitetes Stück lässt sich
   auffüllen.
@@ -267,6 +270,30 @@ Block auch. In der Vorlage zu diesem Projekt steht an mehreren Stellen
 tatsächlich „LandPortion“ statt „Landwein“ – offenbar eine verunglückte
 Suchen-und-Ersetzen-Aktion beim Verlag. Solche Stellen korrigierst du in der
 Blockliste.
+
+### Regieanweisungen mitten im Sprechtext
+
+Ein Stück schreibt beides in dieselbe Zeile:
+
+> HUGO Wer ist das? *(Er tritt ans Fenster.)* Nur der junge Warrender.
+
+Vorgelesen sind das zwei verschiedene Dinge: die Replik gehört der Rolle, der
+Einschub der Regie. Ein Block hat aber genau einen Typ und genau eine Stimme –
+der Umschalter „Wie wird dieser Block gelesen?“ im Bearbeiten-Dialog stellt
+den ganzen Block um, er ist kein zweites Textfeld.
+
+Damit trotzdem beides richtig klingt, bietet der Dialog bei einem Block mit
+Klammern zwei Wege an, mit einer Vorschau der Teile:
+
+- **In N Blöcke aufteilen** – aus einem Block werden mehrere: Sprechtext,
+  Regieanweisung, Sprechtext. Der erste behält seine Nummer, die anderen rücken
+  direkt dahinter ein. Jeder bekommt damit die Stimme, die zu ihm gehört.
+- **Klammerteile entfernen** – die Einschübe fallen weg, der Rest bleibt eine
+  Replik.
+
+Fürs ganze Stück auf einmal steht dieselbe Wahl im Dialog „Automatisch
+erkennen“ unter „Eingeklammerte Regieanweisungen im Sprechtext“:
+*entfernen* (Vorgabe), *als eigene Blöcke*, *im Text lassen*.
 
 ## Konfiguration
 
@@ -512,7 +539,8 @@ cd frontend && npm test && npm run build
 ```
 
 `npm test` prüft die automatische Blockerkennung – Sprechernamen, die als zwei
-Textstücke gesetzt sind, Regieanweisungen, die mit einem Rollennamen beginnen,
+Textstücke gesetzt sind, das Auftrennen eingeklammerter Einschübe,
+Regieanweisungen, die mit einem Rollennamen beginnen,
 Repliken über Seitengrenzen, Seitenzahlen – und die Auswahl eines Ausschnitts:
 Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
 Auftritte, die Einzelauswahl und die Sprungmarken.

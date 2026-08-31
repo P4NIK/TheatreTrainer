@@ -6,6 +6,7 @@ import {
   Button,
   Code,
   Group,
+  Input,
   List,
   Modal,
   Progress,
@@ -18,7 +19,13 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconInfoCircle, IconWand } from '@tabler/icons-react'
 
-import { detectBlocks, guessProfile, learnProfile, type LayoutProfile } from '../../lib/detect'
+import {
+  detectBlocks,
+  guessProfile,
+  learnProfile,
+  type InlineDirections,
+  type LayoutProfile,
+} from '../../lib/detect'
 import { piecesForPages, type TextPiece } from '../../lib/pdfText'
 import { pdfjs } from '../../lib/pdfWorker'
 import type { Block } from '../../types'
@@ -34,6 +41,14 @@ interface Props {
 }
 
 type Range = 'page' | 'rest' | 'all'
+
+const INLINE_HINT: Record<InlineDirections, string> = {
+  strip: 'Einschübe wie „(kostet)“ fallen weg – der kürzeste Weg zu einer sauberen Aufnahme.',
+  split:
+    'Jeder Einschub wird ein eigener Block und damit mit der Regie-Stimme gelesen, ' +
+    'während der Sprechtext bei der Rolle bleibt.',
+  keep: 'Die Rolle liest den Einschub samt Klammern mit vor.',
+}
 
 /** How many annotated pages are sampled to learn the layout from. */
 const LEARN_FROM_PAGES = 5
@@ -53,7 +68,7 @@ export default function AutoDetectModal({
   onApply,
 }: Props) {
   const [range, setRange] = useState<Range>('rest')
-  const [strip, setStrip] = useState(true)
+  const [inline, setInline] = useState<InlineDirections>('strip')
   const [skipFrontMatter, setSkipFrontMatter] = useState(true)
   const [profile, setProfile] = useState<LayoutProfile | null>(null)
   const [busy, setBusy] = useState(false)
@@ -131,7 +146,7 @@ export default function AutoDetectModal({
       )
       const maxOrder = existing.reduce((m, b) => Math.max(m, b.order), 0)
       const result = detectBlocks(pieces, profile, existing, maxOrder + 1, {
-        stripInlineDirections: strip,
+        inlineDirections: inline,
         skipPagesWithoutDialogue: skipFrontMatter,
       })
       setFound(result.blocks)
@@ -220,15 +235,25 @@ export default function AutoDetectModal({
           description="Titelseite, Rechtehinweise und Personenverzeichnis werden sonst zu riesigen Regie-Blöcken."
         />
 
-        <Switch
-          checked={strip}
-          onChange={(e) => {
-            setStrip(e.currentTarget.checked)
-            setFound(null)
-          }}
-          label="Eingeklammerte Regieanweisungen aus dem Sprechtext entfernen"
-          description="Sonst liest die Stimme Einschübe wie „(kostet)“ mit."
-        />
+        <Input.Wrapper
+          label="Eingeklammerte Regieanweisungen im Sprechtext"
+          description={INLINE_HINT[inline]}
+        >
+          <SegmentedControl
+            mt={6}
+            fullWidth
+            value={inline}
+            onChange={(v) => {
+              setInline(v as InlineDirections)
+              setFound(null)
+            }}
+            data={[
+              { label: 'entfernen', value: 'strip' },
+              { label: 'als eigene Blöcke', value: 'split' },
+              { label: 'im Text lassen', value: 'keep' },
+            ]}
+          />
+        </Input.Wrapper>
 
         {busy && <Progress value={progress} animated />}
 

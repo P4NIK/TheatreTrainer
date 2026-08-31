@@ -33,7 +33,7 @@ const profile = {
 
 function detect(pages: Map<number, TextPiece[]>, existing: Block[] = []) {
   return detectBlocks(pages, profile, existing, 1, {
-    stripInlineDirections: true,
+    inlineDirections: 'strip',
     skipPagesWithoutDialogue: false,
   })
 }
@@ -192,7 +192,7 @@ describe('detectBlocks', () => {
     ])
 
     const withSkip = detectBlocks(pages, profile, [], 1, {
-      stripInlineDirections: true,
+      inlineDirections: 'strip',
       skipPagesWithoutDialogue: true,
     })
     expect(withSkip.blocks).toHaveLength(1)
@@ -200,6 +200,36 @@ describe('detectBlocks', () => {
 
     const without = detect(pages)
     expect(without.blocks).toHaveLength(2)
+  })
+
+  it('kann eingeschobene Regieanweisungen als eigene Blöcke ablegen', () => {
+    reset()
+    const page = line([
+      [LEFT, 0.12, 'HUGO'],
+      [SPEECH, 0.6, 'Wer ist das? (Er tritt ans Fenster.) Nur der junge Warrender.'],
+    ])
+    const pages = new Map([[4, page]])
+
+    const split = detectBlocks(pages, profile, [], 1, {
+      inlineDirections: 'split',
+      skipPagesWithoutDialogue: false,
+    })
+    expect(split.blocks.map((b) => [b.type, b.speaker, b.text, b.order])).toEqual([
+      ['line', 'HUGO', 'Wer ist das?', 1],
+      ['direction', null, 'Er tritt ans Fenster.', 2],
+      ['line', 'HUGO', 'Nur der junge Warrender.', 3],
+    ])
+
+    const kept = detectBlocks(pages, profile, [], 1, {
+      inlineDirections: 'keep',
+      skipPagesWithoutDialogue: false,
+    })
+    expect(kept.blocks).toHaveLength(1)
+    expect(kept.blocks[0].text).toContain('(Er tritt ans Fenster.)')
+
+    const stripped = detect(pages)
+    expect(stripped.blocks).toHaveLength(1)
+    expect(stripped.blocks[0].text).toBe('Wer ist das? Nur der junge Warrender.')
   })
 })
 
@@ -240,7 +270,7 @@ describe('scripts without an indented speech column', () => {
       ...line([[LEFT, 0.5, 'SIR ROWLAND stellt das Glas ab.']]),
     ]
     const { blocks } = detectBlocks(new Map([[1, page]]), inline, [], 1, {
-      stripInlineDirections: true,
+      inlineDirections: 'strip',
       skipPagesWithoutDialogue: false,
     })
 

@@ -13,7 +13,7 @@
  */
 import type { Block, BlockType, Rect } from '../types'
 import { piecesToText, type TextPiece } from './pdfText'
-import { newBlockId } from './blocks'
+import { newBlockId, splitBlockAtParens } from './blocks'
 
 export interface LayoutProfile {
   /** Column where speaker names and stage directions begin (0..1). */
@@ -213,9 +213,19 @@ interface Draft {
  * already covers are left alone, so running this twice changes nothing and a
  * partially annotated play can be completed.
  */
+/**
+ * What to do with a stage direction printed inside a spoken line, as in
+ * "Wer ist das? (Er tritt ans Fenster.) Nur der junge Warrender."
+ *
+ * - `strip`: throw the insert away – shortest path to a clean recording.
+ * - `split`: make it a block of its own, so it is read in the stage-direction
+ *   voice while the speech keeps the character's.
+ * - `keep`: leave it in the spoken text, brackets and all.
+ */
+export type InlineDirections = 'strip' | 'split' | 'keep'
+
 export interface DetectOptions {
-  /** Drop parenthesised stage directions from spoken lines. */
-  stripInlineDirections: boolean
+  inlineDirections: InlineDirections
   /**
    * Ignore pages on which no character speaks. Title page, legal notice and
    * cast list would otherwise turn into one enormous stage direction.
@@ -228,7 +238,7 @@ export function detectBlocks(
   profile: LayoutProfile,
   existing: Block[],
   startOrder: number,
-  options: DetectOptions = { stripInlineDirections: true, skipPagesWithoutDialogue: true },
+  options: DetectOptions = { inlineDirections: 'strip', skipPagesWithoutDialogue: true },
 ): DetectionResult {
   const drafts: Draft[] = []
   const pagesWithoutDialogue: number[] = []
@@ -344,7 +354,7 @@ export function detectBlocks(
     const rect = boundingBox(d.pieces)
     if (!rect) continue
     let text = d.textOverride ?? piecesToText(d.pieces)
-    if (d.type === 'line' && options.stripInlineDirections) {
+    if (d.type === 'line' && options.inlineDirections === 'strip') {
       text = stripParentheticals(text)
     }
     if (text === '') continue
@@ -352,15 +362,20 @@ export function detectBlocks(
       skipped++
       continue
     }
-    blocks.push({
+    const block: Block = {
       id: newBlockId(),
       page: d.page,
       rect,
-      order: order++,
+      order: 0, // filled in below, after a possible split
       type: d.type,
       speaker: d.type === 'direction' ? null : d.speaker,
       text,
-    })
+    }
+    const parts =
+      d.type === 'line' && options.inlineDirections === 'split'
+        ? splitBlockAtParens(block)
+        : [block]
+    for (const p of parts) blocks.push({ ...p, order: order++ })
   }
 
   return { blocks, skipped, pagesScanned: pages.length, pagesWithoutDialogue }
