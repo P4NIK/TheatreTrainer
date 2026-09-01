@@ -42,6 +42,7 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
     mode: project.myRole ? 'role' : 'all',
     toPage: Math.max(1, project.pageCount),
   })
+  const [includeDirections, setIncludeDirections] = useState(true)
   const [options, setOptions] = useState<RunOptions>({
     showText: true,
     revealOwn: false,
@@ -59,8 +60,15 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
   // the role picked here, which is not necessarily the project's own role.
   const asRole = useMemo(() => ({ ...project, myRole: role }), [project, role])
   const picked = useMemo(() => buildSelection(blocks, asRole, selection), [blocks, asRole, selection])
-  const steps = useMemo(() => buildSteps(picked.items, blocks, role), [picked, blocks, role])
+  const steps = useMemo(
+    () => buildSteps(picked.items, blocks, role, { includeDirections }),
+    [picked, blocks, role, includeDirections],
+  )
   const stats = statsOf(steps)
+  const directions = useMemo(
+    () => picked.blocks.filter((b) => b.type === 'direction' && b.text.trim() !== '').length,
+    [picked],
+  )
 
   const set = <K extends keyof RunOptions>(key: K, value: RunOptions[K]) =>
     setOptions((o) => ({ ...o, [key]: value }))
@@ -146,6 +154,20 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
             onChange={setSelection}
             selection={picked}
             total={blocks.length}
+          />
+
+          <Switch
+            checked={includeDirections}
+            onChange={(e) => setIncludeDirections(e.currentTarget.checked)}
+            label="Regieanweisungen mitlesen"
+            description={
+              directions === 0
+                ? 'In dieser Auswahl gibt es keine Regieanweisungen.'
+                : `Aus überspringt sie – dann hörst du nur die Repliken. ${
+                    directions === 1 ? '1 Regieblock' : `${directions} Regieblöcke`
+                  } in der Auswahl.`
+            }
+            disabled={directions === 0}
           />
 
           <Divider my="xs" label="Wie viel Hilfe" labelPosition="left" />

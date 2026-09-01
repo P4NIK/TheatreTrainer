@@ -64,6 +64,17 @@ describe('buildSteps', () => {
   it('behandelt Regieanweisungen nie als eigene Replik', () => {
     expect(isOwnLine(block('x', 1, null), 'HUGO')).toBe(false)
   })
+
+  it('überspringt Regieanweisungen auf Wunsch', () => {
+    const steps = buildSteps(items, blocks, 'HUGO', { includeDirections: false })
+    expect(steps.map((s) => s.block?.id)).toEqual(['b1', 'b2', undefined, 'b4'])
+    expect(steps.some((s) => s.block?.type === 'direction')).toBe(false)
+  })
+
+  it('behält Sprungmarken auch ohne Regieanweisungen', () => {
+    const steps = buildSteps(items, blocks, 'HUGO', { includeDirections: false })
+    expect(steps.filter((s) => s.kind === 'jump')).toHaveLength(1)
+  })
 })
 
 describe('statsOf', () => {

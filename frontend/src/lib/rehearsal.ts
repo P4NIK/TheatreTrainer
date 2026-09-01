@@ -33,11 +33,21 @@ export function isOwnLine(block: Block, role: string): boolean {
   )
 }
 
+export interface StepOptions {
+  /** Read the stage directions along, or skip them entirely. */
+  includeDirections: boolean
+}
+
 /**
  * Turns the render list of a selection into rehearsal steps. Blocks without
  * text are dropped – there is nothing to play and nothing to say.
  */
-export function buildSteps(items: SelectionItem[], blocks: Block[], role: string): Step[] {
+export function buildSteps(
+  items: SelectionItem[],
+  blocks: Block[],
+  role: string,
+  options: StepOptions = { includeDirections: true },
+): Step[] {
   const byID = new Map(blocks.map((b) => [b.id, b]))
   const steps: Step[] = []
 
@@ -48,6 +58,7 @@ export function buildSteps(items: SelectionItem[], blocks: Block[], role: string
     }
     const block = item.blockId ? byID.get(item.blockId) : undefined
     if (!block || block.text.trim() === '') continue
+    if (block.type === 'direction' && !options.includeDirections) continue
     steps.push({ kind: isOwnLine(block, role) ? 'speak' : 'listen', block })
   }
 

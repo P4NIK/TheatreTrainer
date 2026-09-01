@@ -435,6 +435,7 @@ Vor dem Start stellst du ein:
 |---|---|
 | **Deine Rolle** | Bei ihr hält der Durchlauf an. Muss nicht die im Projekt hinterlegte Rolle sein – so übst du auch eine Zweitbesetzung |
 | **Welcher Teil** | dieselbe Auswahl wie bei der Hörfassung: ganzes Stück, Seitenbereich, deine Auftritte, einzelne Blöcke |
+| **Regieanweisungen mitlesen** | aus überspringt sie – dann läuft nur der Dialog |
 | **Text der anderen mitlesen** | aus heißt: nur zuhören, näher an der echten Probe |
 | **Eigenen Text während der Pause zeigen** | für den ersten Durchgang; sonst deckst du ihn bei Bedarf auf |
 | **Pause automatisch beenden** | nach n Sekunden weiter, statt selbst zu klicken |
@@ -606,7 +607,8 @@ Regieanweisungen, die mit einem Rollennamen beginnen,
 Repliken über Seitengrenzen, Seitenzahlen –, die Auswahl eines Ausschnitts –
 Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
 Auftritte, die Einzelauswahl und die Sprungmarken – und den Ablauf des
-Lernmodus: welche Schritte gehört und welche gesprochen werden.
+Lernmodus: welche Schritte gehört und welche gesprochen werden und was beim
+Überspringen der Regieanweisungen übrig bleibt.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):
