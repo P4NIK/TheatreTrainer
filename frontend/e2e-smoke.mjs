@@ -134,6 +134,21 @@ console.log('   gesendet:', (sent.selection ?? []).length, 'Einträge')
 console.log('   Dateiname:', await page.getByRole('link', { name: /Herunterladen/ }).getAttribute('download'))
 await page.getByText('Ganzes Stück').click()
 
+step('Lernmodus: einmal bis zur eigenen Replik und auflösen')
+await page.getByRole('tab', { name: 'Lernmodus' }).click()
+await page.waitForTimeout(400)
+console.log('   ' + (await page.getByText(/Schritte – davon/).textContent()))
+await page.getByRole('button', { name: 'Probe starten' }).click()
+const speak = page.getByRole('button', { name: 'Fertig – auflösen' })
+await speak.waitFor({ timeout: 90000 }).catch(() => errors.push('Lernmodus: eigene Replik nie erreicht'))
+if (await speak.isVisible().catch(() => false)) {
+  await speak.click()
+  await page.getByText(/so steht es im Buch/i).waitFor({ timeout: 30000 })
+  console.log('   Auflösung erschienen')
+}
+await page.getByRole('button', { name: 'Beenden' }).click()
+await page.waitForTimeout(300)
+
 step('Automatisch erkennen – auch von einem anderen Tab aus')
 // Regression: der Knopf sitzt in der Kopfzeile und ist auf allen Tabs sichtbar,
 // während der PDF-Editor dort ausgehängt ist. Ein von dort geliehenes

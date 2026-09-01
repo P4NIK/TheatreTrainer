@@ -17,6 +17,7 @@ import {
   IconArrowLeft,
   IconDeviceFloppy,
   IconHeadphones,
+  IconSchool,
   IconSquareRoundedLetterA,
   IconUsers,
   IconWand,
@@ -27,6 +28,7 @@ import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
 import PdfCanvasEditor from '../components/PdfCanvasEditor/PdfCanvasEditor'
+import RehearsalPanel from '../components/Rehearsal/RehearsalPanel'
 import SpeakerConfig from '../components/SpeakerConfig/SpeakerConfig'
 import SynthesizePanel from '../components/SynthesizePanel/SynthesizePanel'
 import {
@@ -288,6 +290,9 @@ export default function EditorPage({ projectId, onBack }: Props) {
           <Tabs.Tab value="audio" leftSection={<IconHeadphones size={16} />}>
             Hörfassung
           </Tabs.Tab>
+          <Tabs.Tab value="rehearsal" leftSection={<IconSchool size={16} />}>
+            Lernmodus
+          </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="editor">
@@ -338,6 +343,15 @@ export default function EditorPage({ projectId, onBack }: Props) {
 
         <Tabs.Panel value="audio">
           <SynthesizePanel
+            project={project}
+            blocks={blocks}
+            speakers={speakers}
+            onBeforeStart={save}
+          />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="rehearsal">
+          <RehearsalPanel
             project={project}
             blocks={blocks}
             speakers={speakers}

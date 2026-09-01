@@ -33,6 +33,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Nur einen Ausschnitt erzeugen: ein Seitenbereich (z. B. Akt 1), alle Stellen,
   an denen die eigene Rolle auf der Bühne steht – samt Stichwort davor – oder
   eine von Hand angehakte Auswahl einzelner Blöcke
+- **Lernmodus**: interaktiv proben – alles wird vorgelesen, bei der eigenen
+  Rolle hält der Durchlauf an, danach kommt die Auflösung
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -229,6 +231,8 @@ cd ../backend && go run ./cmd/server
    (siehe unten), darunter die Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
    im Browser anhören oder herunterladen.
+6. **Lernmodus** – Rolle und Ausschnitt wählen, „Probe starten“, und der
+   Rechner spielt dir die Szene vor, bis du dran bist (siehe unten).
 
 ### Blöcke automatisch erkennen
 
@@ -418,6 +422,63 @@ Berechnet wird die Auswahl im Frontend (`frontend/src/lib/selection.ts`); an
 den Server geht nur die fertige Liste aus Block-IDs und Sprungmarken. Der
 Server rendert, was in der Liste steht, in genau dieser Reihenfolge.
 
+## Lernmodus
+
+Die Hörfassung ist eine Datei zum Mitlaufen. Der Lernmodus ist eine Probe: Du
+wählst deine Rolle, und der Durchlauf spielt Replik für Replik ab – bis deine
+kommt. Dann hält er an und wartet. Du sprichst. Anschließend liest er vor, was
+im Buch steht, und du hörst sofort, wo du daneben lagst.
+
+Vor dem Start stellst du ein:
+
+| Einstellung | Wirkung |
+|---|---|
+| **Deine Rolle** | Bei ihr hält der Durchlauf an. Muss nicht die im Projekt hinterlegte Rolle sein – so übst du auch eine Zweitbesetzung |
+| **Welcher Teil** | dieselbe Auswahl wie bei der Hörfassung: ganzes Stück, Seitenbereich, deine Auftritte, einzelne Blöcke |
+| **Text der anderen mitlesen** | aus heißt: nur zuhören, näher an der echten Probe |
+| **Eigenen Text während der Pause zeigen** | für den ersten Durchgang; sonst deckst du ihn bei Bedarf auf |
+| **Pause automatisch beenden** | nach n Sekunden weiter, statt selbst zu klicken |
+| **Mitschneiden** | nimmt deine Repliken auf, direkt nach der Auflösung anhörbar |
+
+Im Durchlauf: <kbd>Leertaste</kbd> weiter (beendet die Pause und löst auf),
+<kbd>R</kbd> Replik wiederholen, <kbd>T</kbd> eigenen Text aufdecken,
+<kbd>P</kbd> anhalten, <kbd>←</kbd>/<kbd>→</kbd> eine Replik zurück und vor.
+Über der aktuellen Zeile stehen die beiden vorherigen – genug, um zu wissen,
+wo man ist.
+
+**Die Aufnahme bleibt im Browser.** Sie wird nicht hochgeladen und nicht
+gespeichert; mit dem Schließen des Durchlaufs ist sie weg. Der Browser fragt
+beim ersten Mal nach dem Mikrofon; ohne Erlaubnis läuft die Probe trotzdem,
+nur eben ohne Mitschnitt.
+
+**Wartezeit beim ersten Mal.** Jede Replik wird beim ersten Abspielen einmal
+mit Piper erzeugt (ein paar Sekunden) und liegt danach im selben
+Zwischenspeicher, den auch die Hörfassung nutzt. Während eine Replik läuft,
+werden die nächsten vier im Hintergrund geladen; „Vorbereiten“ erledigt vorab
+den ganzen Ausschnitt, dann läuft der Durchlauf ohne Stocken.
+
+### Warum das Gesprochene (noch) nicht automatisch verglichen wird
+
+Naheliegender nächster Schritt: das Gesagte per Spracherkennung in Text
+verwandeln und Wort für Wort grün oder rot einfärben. Das ist machbar – aber
+als Gedächtnisstütze, nicht als Schiedsrichter, und deshalb ist es bewusst
+noch nicht eingebaut.
+
+Whisper liegt für Deutsch bei rund 4–7 % Wortfehlerrate unter guten
+Bedingungen. Für „fehlt dir die halbe Replik?“ reicht das locker. Ausgerechnet
+die Wörter, auf die es im Theater ankommt, trifft die Erkennung aber am
+schlechtesten: Eigennamen („Sir Rowland“, „Romanée Conti“), Dialekt, leises
+oder gespieltes Sprechen, kurze Einwürfe. Ein rotes Wort hieße dann oft „der
+Erkenner hat sich verhört“, nicht „du hast dich verhaspelt“.
+
+Wer es einbaut, sollte deshalb: den erwarteten Text als `initial_prompt` an
+Whisper geben, damit es die Namen kennt; vor dem Vergleich normalisieren
+(Kleinschreibung, Satzzeichen weg); pro Wort unscharf vergleichen
+(Levenshtein plus Kölner Phonetik), damit „Romane Conti“ durchgeht; und drei
+Zustände statt zwei zeigen – *sitzt*, *anders gesagt*, *fehlt*. Technisch
+gehört Whisper an dieselbe Stelle wie Piper: ein optionales CLI, das
+automatisch gesucht wird und dessen Fehlen den Rest nicht kaputt macht.
+
 ### Die eigene Rolle als Pause
 
 Ist „eigene Rolle aussparen“ aktiv, wird deine Rolle trotzdem synthetisiert –
@@ -461,8 +522,9 @@ backend/
   internal/httpapi/   # HTTP-Router und Handler
 frontend/
   src/api/            # typisierter API-Client
-  src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig, SynthesizePanel
-  src/lib/            # Textextraktion aus dem PDF, Blockerkennung, Auswahl
+  src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
+                      # AutoDetect, SynthesizePanel, Rehearsal
+  src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf
   src/pages/          # Projektliste und Editor
 ```
 
@@ -541,9 +603,10 @@ cd frontend && npm test && npm run build
 `npm test` prüft die automatische Blockerkennung – Sprechernamen, die als zwei
 Textstücke gesetzt sind, das Auftrennen eingeklammerter Einschübe,
 Regieanweisungen, die mit einem Rollennamen beginnen,
-Repliken über Seitengrenzen, Seitenzahlen – und die Auswahl eines Ausschnitts:
+Repliken über Seitengrenzen, Seitenzahlen –, die Auswahl eines Ausschnitts –
 Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
-Auftritte, die Einzelauswahl und die Sprungmarken.
+Auftritte, die Einzelauswahl und die Sprungmarken – und den Ablauf des
+Lernmodus: welche Schritte gehört und welche gesprochen werden.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):
