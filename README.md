@@ -45,11 +45,14 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 
 | Werkzeug | Version | Zweck |
 |---|---|---|
-| [Go](https://go.dev/dl/) | 1.22 oder neuer | Backend |
+| [Go](https://go.dev/dl/) | 1.24.7 oder neuer | Backend |
 | [Node.js](https://nodejs.org/) | 20 oder neuer (empfohlen 22) | Frontend |
 | [Piper](https://github.com/OHF-Voice/piper1-gpl) | aktuell | Sprachsynthese |
 | ffmpeg | optional | MP3-Export (ohne ffmpeg wird WAV ausgeliefert) |
 | [Whisper](https://github.com/openai/whisper) | optional | Auswertung des Gesagten im Lernmodus |
+
+Alternativ genügt **Docker** – dann muss nichts davon installiert sein, siehe
+[Mit Docker auf einem Heimserver](#mit-docker-auf-einem-heimserver).
 
 ### Piper installieren
 
@@ -214,6 +217,88 @@ cd frontend && npm install && npm run build
 cd ../backend && go run ./cmd/server
 # App läuft komplett auf http://localhost:8080
 ```
+
+### Mit Docker auf einem Heimserver
+
+Der Weg oben bleibt unverändert – Docker ist eine **zweite** Möglichkeit,
+dieselbe Anwendung zu starten, gedacht für einen Rechner, der ohnehin läuft.
+
+```bash
+git clone <dieses Repo> && cd TheaterTTS
+cp .env.example .env          # Port, Benutzernummer, gewünschte Stimmen
+docker compose up -d --build
+```
+
+Danach läuft alles unter `http://<server>:8080`. Der erste Build dauert ein
+paar Minuten (Frontend, Go-Binary, Piper); danach startet der Container in
+Sekunden. Beim ersten Start lädt er die Stimmen aus `THEATER_VOICES` nach,
+falls sie fehlen.
+
+**Die Daten liegen weiterhin daneben.** `./data` und `./voices` sind in den
+Container gemountet – dieselben Ordner mit denselben JSON-Dateien, die auch
+`go run ./cmd/server` benutzt. Man kann also mit Docker proben und am nächsten
+Tag ohne, ohne etwas umzukopieren.
+
+| Einstellung in `.env` | Wirkung |
+|---|---|
+| `THEATER_PORT` | Port auf dem Server (Vorgabe 8080) |
+| `PUID` / `PGID` | wem die Dateien in `data/` gehören sollen – `id -u`, `id -g` |
+| `THEATER_VOICES` | Stimmen, die beim ersten Start geladen werden; leer = gar keine |
+| `INCLUDE_WHISPER` | `1` baut die Spracherkennung für den Lernmodus mit ein |
+| `WHISPER_MODEL` | Modellgröße, wenn Whisper dabei ist |
+
+Ohne Whisper landet das Image grob bei 700–900 MB, mit Whisper bei mehreren
+Gigabyte – PyTorch kommt mit. Deshalb ist es standardmäßig aus:
+
+```bash
+INCLUDE_WHISPER=1 docker compose up -d --build
+```
+
+Läuft auch auf arm64 (Raspberry Pi 4/5, ARM-NAS); gebaut wird für die
+Architektur des Servers.
+
+Nützliche Befehle:
+
+```bash
+docker compose logs -f          # was macht es gerade?
+docker compose up -d --build    # nach einem git pull neu bauen
+docker compose down             # anhalten, Daten bleiben
+docker compose run --rm theater-vorleser \
+  python -m piper.download_voices de_DE-thorsten-high --data-dir /app/voices
+```
+
+#### Zwei Dinge, bevor es aus dem Internet erreichbar ist
+
+**Die App hat keine Anmeldung.** Sie war für „läuft auf meinem Rechner“
+gebaut: kein Benutzer, kein Passwort, keine Rechteprüfung. Wer die Adresse
+kennt, sieht deine Stücke und kann sie ändern oder löschen. Portfreigabe im
+Router ist deshalb keine gute Idee. Zwei Wege, die funktionieren:
+
+- **VPN** – WireGuard oder Tailscale. Der Server bleibt im Heimnetz, das
+  Handy ist von außen einfach drin. Am wenigsten, was schiefgehen kann.
+- **Reverse Proxy mit Passwort und Zertifikat** – z. B. Caddy:
+
+  ```
+  probe.example.org {
+      basic_auth {
+          ich <bcrypt-hash aus: caddy hash-password>
+      }
+      reverse_proxy theater-vorleser:8080
+  }
+  ```
+
+**Der Lernmodus braucht HTTPS, sonst gibt es kein Mikrofon.** Browser geben
+`navigator.mediaDevices` nur in einem „sicheren Kontext“ frei – also über
+HTTPS oder auf `localhost`. Rufst du die App als `http://192.168.1.20:8080`
+auf, ist das Mikrofon schlicht nicht vorhanden: kein Fehler, keine Nachfrage.
+Der Schalter „Mitschneiden“ ist dann ausgegraut und sagt warum. Vorlesen,
+Auswahl und Hörfassung funktionieren trotzdem, nur Mitschnitt und Auswertung
+nicht.
+
+Abhilfe: derselbe Reverse Proxy wie oben mit einem echten Zertifikat, oder
+`tailscale serve https / http://localhost:8080` – Tailscale stellt dann ein
+gültiges Zertifikat für den Rechnernamen aus. Ein selbst signiertes
+Zertifikat reicht Chrome nicht.
 
 ## Bedienung
 
@@ -559,6 +644,9 @@ backend/
   internal/synth/     # Piper-Aufruf, Audio-Konkatenation, Jobs
   internal/stt/       # optionale Spracherkennung für den Lernmodus
   internal/httpapi/   # HTTP-Router und Handler
+Dockerfile            # Frontend + Backend bauen, in ein Python-Image legen
+docker-compose.yml    # Start auf einem Heimserver
+docker/entrypoint.sh  # lädt fehlende Stimmen, startet den Server
 frontend/
   src/api/            # typisierter API-Client
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,

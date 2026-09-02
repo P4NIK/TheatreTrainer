@@ -1,0 +1,24 @@
+# Nutzerdaten und Modelle kommen als Volume, nicht ins Image.
+data/
+voices/
+
+# Wird im Image neu gebaut.
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/theater-tts
+backend/theater-tts.exe
+backend/server
+
+# Nichts davon beeinflusst den Build.
+.git/
+.github/
+.idea/
+.vscode/
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
+.env
+.env.example
+test.wav

@@ -17,6 +17,9 @@ frontend/dist/
 /backend/theater-tts
 /backend/theater-tts.exe
 
+# Docker: die eigene Konfiguration bleibt lokal, die Vorlage nicht.
+.env
+
 # Editor / OS
 .DS_Store
 Thumbs.db

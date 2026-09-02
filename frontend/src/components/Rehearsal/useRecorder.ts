@@ -28,11 +28,24 @@ export interface Recorder {
   release: () => void
 }
 
-export function useRecorder(): Recorder {
-  const supported =
+/**
+ * Whether this page may ask for a microphone at all.
+ *
+ * Browsers hand out `navigator.mediaDevices` only in a secure context – HTTPS
+ * or localhost. Opened as plain http from another machine (a home server, say)
+ * it is simply `undefined`, with no error and no prompt, so the switch has to
+ * say why instead of quietly doing nothing.
+ */
+export function microphoneAvailable(): boolean {
+  return (
     typeof window !== 'undefined' &&
     typeof MediaRecorder !== 'undefined' &&
     !!navigator.mediaDevices?.getUserMedia
+  )
+}
+
+export function useRecorder(): Recorder {
+  const supported = microphoneAvailable()
 
   const stream = useRef<MediaStream | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)

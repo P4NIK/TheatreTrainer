@@ -1,0 +1,46 @@
+# Theater-Vorleser auf einem Heimserver.
+#
+#   docker compose up -d --build
+#
+# Danach läuft alles unter http://<server>:8080. `data/` und `voices/` liegen
+# als Ordner daneben – dieselben, die auch der klassische Start benutzt, mit
+# denselben JSON-Dateien darin. Zwischen beiden Wegen lässt sich also wechseln.
+#
+# Einstellungen kommen aus einer .env; `cp .env.example .env` als Anfang.
+
+services:
+  theater-vorleser:
+    build:
+      context: .
+      args:
+        # 1 baut die Spracherkennung für den Lernmodus mit ein (groß, siehe README).
+        INCLUDE_WHISPER: ${INCLUDE_WHISPER:-0}
+    image: theater-vorleser:latest
+    container_name: theater-vorleser
+    restart: unless-stopped
+
+    # Die Dateien auf dem Host sollen dem eigenen Benutzer gehören, nicht root.
+    # `id -u` und `id -g` liefern die passenden Nummern.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    ports:
+      - "${THEATER_PORT:-8080}:8080"
+
+    environment:
+      # Stimmen, die beim ersten Start geladen werden, falls sie fehlen.
+      THEATER_VOICES: ${THEATER_VOICES:-de_DE-thorsten-medium}
+      # Feineinstellungen der Ausgabe – siehe Abschnitt „Konfiguration“.
+      THEATER_GAP_MS: ${THEATER_GAP_MS:-450}
+      THEATER_SKIP_PAUSE_MS: ${THEATER_SKIP_PAUSE_MS:-2500}
+      # Nur wirksam, wenn mit INCLUDE_WHISPER=1 gebaut wurde.
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+
+    volumes:
+      - ./data:/app/data
+      - ./voices:/app/voices
+      # Whisper legt sein Modell hier ab; als benanntes Volume überlebt es ein
+      # `docker compose down` und muss nicht jedes Mal neu geladen werden.
+      - whisper-models:/app/cache
+
+volumes:
+  whisper-models:

@@ -34,6 +34,7 @@ import {
 import SelectionCard from '../SynthesizePanel/SelectionCard'
 import RehearsalRun, { type RunOptions } from './RehearsalRun'
 import { useBlockAudio } from './useBlockAudio'
+import { microphoneAvailable } from './useRecorder'
 
 interface Props {
   project: Project
@@ -107,6 +108,7 @@ export default function RehearsalPanel({
   }, [steps, speakers])
 
   const roleHasVoice = role !== '' && !!speakers[role]?.model
+  const canRecord = microphoneAvailable()
 
   const prepare = async () => {
     const ids = upcomingBlockIDs(steps, 0, steps.length)
@@ -230,19 +232,24 @@ export default function RehearsalPanel({
             )}
           </Group>
           <Switch
-            checked={options.record}
+            checked={options.record && canRecord}
             onChange={(e) => {
               const on = e.currentTarget.checked
               setOptions((o) => ({ ...o, record: on, analyze: on && o.analyze }))
             }}
             label="Mitschneiden, was ich sage"
-            description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst."
+            disabled={!canRecord}
+            description={
+              canRecord
+                ? 'Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst.'
+                : 'Der Browser gibt das Mikrofon nur über HTTPS oder auf localhost frei. Über eine reine http-Adresse im Heimnetz gibt es deshalb keine Aufnahme – siehe README, Abschnitt Docker.'
+            }
           />
           <Switch
             checked={options.analyze}
             onChange={(e) => set('analyze', e.currentTarget.checked)}
             label="Gesagtes auswerten"
-            disabled={!options.record || !stt?.available}
+            disabled={!options.record || !canRecord || !stt?.available}
             description={
               !options.record
                 ? 'Braucht den Mitschnitt – erst den Schalter darüber einschalten.'
