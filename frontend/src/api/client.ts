@@ -9,7 +9,9 @@ import type {
   Job,
   Project,
   Speakers,
+  SttInfo,
   SynthOptions,
+  Transcript,
   VoicesResponse,
 } from '../types'
 
@@ -129,6 +131,23 @@ export const api = {
   /** Audio of a single block – rendered on demand and kept in the cache. */
   blockAudioUrl: (id: string, blockId: string) =>
     `${BASE}/projects/${id}/blocks/${blockId}/audio`,
+
+  /** Whether a local speech recognition was found – the comparison needs it. */
+  sttInfo: () => request<SttInfo>('/stt'),
+
+  /**
+   * Sends a recording of one block and returns what was understood. The
+   * comparison with the text happens in the browser, so correcting the block
+   * re-colours the result without asking the recogniser again.
+   */
+  transcribe: (id: string, blockId: string, audio: Blob): Promise<Transcript> => {
+    const form = new FormData()
+    form.append('audio', audio, 'take.webm')
+    return request<Transcript>(`/projects/${id}/blocks/${blockId}/transcribe`, {
+      method: 'POST',
+      body: form,
+    })
+  },
 
   cacheStatus: (id: string) => request<CacheStatus>(`/projects/${id}/cache`),
 

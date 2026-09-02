@@ -15,6 +15,8 @@ export interface BlockAudio {
   get: (blockId: string) => Promise<string>
   /** Loads blocks in the background; errors are ignored. */
   prefetch: (blockIds: string[]) => void
+  /** Throws a block away after its text changed, so it is rendered anew. */
+  invalidate: (blockId: string) => void
   /** Blocks currently in flight – for a "wird vorbereitet …" hint. */
   loading: Set<string>
 }
@@ -81,5 +83,14 @@ export function useBlockAudio(projectId: string): BlockAudio {
     [get],
   )
 
-  return { get, prefetch, loading }
+  const invalidate = useCallback((blockId: string) => {
+    const url = urls.current.get(blockId)
+    if (url) {
+      URL.revokeObjectURL(url)
+      urls.current.delete(blockId)
+    }
+    inFlight.current.delete(blockId)
+  }, [])
+
+  return { get, prefetch, invalidate, loading }
 }

@@ -41,6 +41,18 @@ type Config struct {
 	GapMillis int
 	// SkippedRoleMillis is the pause inserted instead of your own lines.
 	SkippedRoleMillis int
+	// STTCmd is the speech recognition command plus leading arguments, e.g.
+	// ["whisper"] or ["python", "-m", "whisper"]. Empty unless WHISPER_BIN was
+	// set – otherwise the command is auto-detected like Piper's.
+	STTCmd []string
+	// STTExplicit is true when WHISPER_BIN was set, which disables detection.
+	STTExplicit bool
+	// STTTemplate is a complete command line for engines that do not speak
+	// Whisper's CLI (whisper.cpp and friends). The placeholders {audio},
+	// {model} and {out} are filled in; the transcript is read from stdout.
+	STTTemplate string
+	// WhisperModel is the model size handed to Whisper.
+	WhisperModel string
 }
 
 // Load builds the configuration from the environment, falling back to
@@ -60,9 +72,28 @@ func Load() *Config {
 		SampleRate:        envInt("THEATER_SAMPLE_RATE", 22050),
 		GapMillis:         envInt("THEATER_GAP_MS", 450),
 		SkippedRoleMillis: envInt("THEATER_SKIP_PAUSE_MS", 2500),
+		STTCmd:            strings.Fields(env("WHISPER_BIN", "")),
+		STTTemplate:       strings.TrimSpace(env("STT_CMD", "")),
+		WhisperModel:      env("WHISPER_MODEL", "small"),
 	}
 	c.PiperExplicit = len(c.PiperCmd) > 0
+	c.STTExplicit = len(c.STTCmd) > 0
 	return c
+}
+
+// STTCandidates lists the commands probed when WHISPER_BIN is not set. Same
+// story as Piper: `pip install openai-whisper` does not reliably put `whisper`
+// on the PATH, so the module invocation is tried as well.
+func (c *Config) STTCandidates() [][]string {
+	if c.STTExplicit {
+		return [][]string{c.STTCmd}
+	}
+	return [][]string{
+		{"whisper"},
+		{"python", "-m", "whisper"},
+		{"python3", "-m", "whisper"},
+		{"py", "-m", "whisper"},
+	}
 }
 
 // PiperCandidates lists the commands that are probed when PIPER_BIN is not

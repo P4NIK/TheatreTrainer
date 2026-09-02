@@ -2,7 +2,7 @@
  * Setting up a rehearsal run: which role, which part of the play, and how much
  * help you want. The run itself lives in RehearsalRun.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -19,10 +19,18 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconPlayerPlay } from '@tabler/icons-react'
 
+import { api } from '../../api/client'
+
 import { speakerNames } from '../../lib/blocks'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
 import { buildSteps, statsOf, upcomingBlockIDs } from '../../lib/rehearsal'
-import { DIRECTION_KEY, type Block, type Project, type Speakers } from '../../types'
+import {
+  DIRECTION_KEY,
+  type Block,
+  type Project,
+  type Speakers,
+  type SttInfo,
+} from '../../types'
 import SelectionCard from '../SynthesizePanel/SelectionCard'
 import RehearsalRun, { type RunOptions } from './RehearsalRun'
 import { useBlockAudio } from './useBlockAudio'
@@ -31,11 +39,19 @@ interface Props {
   project: Project
   blocks: Block[]
   speakers: Speakers
+  /** Fixing the text of a block from inside the run. */
+  onCorrectBlock: (blockId: string, text: string) => void
   /** Called before starting, so unsaved edits are on the server. */
   onBeforeStart: () => Promise<void>
 }
 
-export default function RehearsalPanel({ project, blocks, speakers, onBeforeStart }: Props) {
+export default function RehearsalPanel({
+  project,
+  blocks,
+  speakers,
+  onCorrectBlock,
+  onBeforeStart,
+}: Props) {
   const [role, setRole] = useState(project.myRole)
   const [selection, setSelection] = useState<SelectionSettings>({
     ...defaultSelection,
@@ -48,12 +64,18 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
     revealOwn: false,
     autoAdvance: null,
     record: false,
+    analyze: false,
   })
+  const [stt, setStt] = useState<SttInfo | null>(null)
   const [running, setRunning] = useState(false)
   const [preparing, setPreparing] = useState<number | null>(null)
   const [starting, setStarting] = useState(false)
 
   const audio = useBlockAudio(project.id)
+
+  useEffect(() => {
+    api.sttInfo().then(setStt).catch(() => setStt(null))
+  }, [])
   const roles = useMemo(() => speakerNames(blocks), [blocks])
 
   // The selection knows "my appearances" – for the rehearsal that has to mean
@@ -109,10 +131,12 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
   if (running) {
     return (
       <RehearsalRun
+        projectId={project.id}
         steps={steps}
         role={role}
         options={options}
         audio={audio}
+        onCorrectBlock={onCorrectBlock}
         onExit={() => setRunning(false)}
       />
     )
@@ -207,9 +231,25 @@ export default function RehearsalPanel({ project, blocks, speakers, onBeforeStar
           </Group>
           <Switch
             checked={options.record}
-            onChange={(e) => set('record', e.currentTarget.checked)}
+            onChange={(e) => {
+              const on = e.currentTarget.checked
+              setOptions((o) => ({ ...o, record: on, analyze: on && o.analyze }))
+            }}
             label="Mitschneiden, was ich sage"
-            description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören."
+            description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst."
+          />
+          <Switch
+            checked={options.analyze}
+            onChange={(e) => set('analyze', e.currentTarget.checked)}
+            label="Gesagtes auswerten"
+            disabled={!options.record || !stt?.available}
+            description={
+              !options.record
+                ? 'Braucht den Mitschnitt – erst den Schalter darüber einschalten.'
+                : stt?.available
+                  ? `Der Mitschnitt wird lokal in Text verwandelt (${stt.command}, Modell ${stt.model}) und Wort für Wort mit dem Buch verglichen. Das dauert ein paar Sekunden pro Replik und ist eine Gedächtnisstütze, kein Urteil.`
+                  : 'Keine lokale Spracherkennung gefunden – siehe README, Abschnitt Lernmodus.'
+            }
           />
         </Stack>
       </Card>

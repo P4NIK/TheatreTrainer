@@ -9,6 +9,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+export interface Take {
+  /** Object URL for playing it back right away. */
+  url: string
+  /** The same audio as data – this is what goes to the recogniser. */
+  blob: Blob
+}
+
 export interface Recorder {
   /** False in browsers without MediaRecorder, or outside a secure context. */
   supported: boolean
@@ -16,8 +23,8 @@ export interface Recorder {
   /** Set when the microphone was refused or is missing. */
   error: string | null
   start: () => Promise<void>
-  /** Stops and returns the object URL of the take, or null if nothing came. */
-  stop: () => Promise<string | null>
+  /** Stops and returns the take, or null if nothing came of it. */
+  stop: () => Promise<Take | null>
   release: () => void
 }
 
@@ -43,7 +50,7 @@ export function useRecorder(): Recorder {
   useEffect(() => release, [release])
 
   const start = useCallback(async () => {
-    if (!supported) return
+    if (!supported || recorder.current) return // already running
     try {
       if (!stream.current) {
         stream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -66,7 +73,7 @@ export function useRecorder(): Recorder {
     }
   }, [supported])
 
-  const stop = useCallback((): Promise<string | null> => {
+  const stop = useCallback((): Promise<Take | null> => {
     const rec = recorder.current
     if (!rec || rec.state === 'inactive') {
       setRecording(false)
@@ -77,7 +84,7 @@ export function useRecorder(): Recorder {
         setRecording(false)
         recorder.current = null
         const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' })
-        resolve(blob.size > 0 ? URL.createObjectURL(blob) : null)
+        resolve(blob.size > 0 ? { url: URL.createObjectURL(blob), blob } : null)
       }
       rec.stop()
     })

@@ -34,7 +34,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   an denen die eigene Rolle auf der Bühne steht – samt Stichwort davor – oder
   eine von Hand angehakte Auswahl einzelner Blöcke
 - **Lernmodus**: interaktiv proben – alles wird vorgelesen, bei der eigenen
-  Rolle hält der Durchlauf an, danach kommt die Auflösung
+  Rolle hält der Durchlauf an, danach kommt die Auflösung. Optional mit
+  Mitschnitt und Wort-für-Wort-Vergleich per lokaler Spracherkennung
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -48,6 +49,7 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 | [Node.js](https://nodejs.org/) | 20 oder neuer (empfohlen 22) | Frontend |
 | [Piper](https://github.com/OHF-Voice/piper1-gpl) | aktuell | Sprachsynthese |
 | ffmpeg | optional | MP3-Export (ohne ffmpeg wird WAV ausgeliefert) |
+| [Whisper](https://github.com/openai/whisper) | optional | Auswertung des Gesagten im Lernmodus |
 
 ### Piper installieren
 
@@ -439,7 +441,8 @@ Vor dem Start stellst du ein:
 | **Text der anderen mitlesen** | aus heißt: nur zuhören, näher an der echten Probe |
 | **Eigenen Text während der Pause zeigen** | für den ersten Durchgang; sonst deckst du ihn bei Bedarf auf |
 | **Pause automatisch beenden** | nach n Sekunden weiter, statt selbst zu klicken |
-| **Mitschneiden** | nimmt deine Repliken auf, direkt nach der Auflösung anhörbar |
+| **Mitschneiden** | nimmt deine Repliken auf, direkt nach der Auflösung anhörbar; der Durchlauf wartet dann auf „Weiter“ |
+| **Gesagtes auswerten** | schickt den Mitschnitt an die lokale Spracherkennung und vergleicht Wort für Wort (siehe unten) |
 
 Im Durchlauf: <kbd>Leertaste</kbd> weiter (beendet die Pause und löst auf),
 <kbd>R</kbd> Replik wiederholen, <kbd>T</kbd> eigenen Text aufdecken,
@@ -458,27 +461,61 @@ Zwischenspeicher, den auch die Hörfassung nutzt. Während eine Replik läuft,
 werden die nächsten vier im Hintergrund geladen; „Vorbereiten“ erledigt vorab
 den ganzen Ausschnitt, dann läuft der Durchlauf ohne Stocken.
 
-### Warum das Gesprochene (noch) nicht automatisch verglichen wird
+### Gesagtes auswerten
 
-Naheliegender nächster Schritt: das Gesagte per Spracherkennung in Text
-verwandeln und Wort für Wort grün oder rot einfärben. Das ist machbar – aber
-als Gedächtnisstütze, nicht als Schiedsrichter, und deshalb ist es bewusst
-noch nicht eingebaut.
+Ist der Schalter an, wandert der Mitschnitt nach jeder Replik an eine **lokal
+installierte Spracherkennung** und das Ergebnis wird Wort für Wort mit dem
+Buch verglichen:
 
-Whisper liegt für Deutsch bei rund 4–7 % Wortfehlerrate unter guten
-Bedingungen. Für „fehlt dir die halbe Replik?“ reicht das locker. Ausgerechnet
-die Wörter, auf die es im Theater ankommt, trifft die Erkennung aber am
-schlechtesten: Eigennamen („Sir Rowland“, „Romanée Conti“), Dialekt, leises
-oder gespieltes Sprechen, kurze Einwürfe. Ein rotes Wort hieße dann oft „der
-Erkenner hat sich verhört“, nicht „du hast dich verhaspelt“.
+> 29er <span title="verstanden: Romane">Romanée</span> Conti. *(bitte)*
+> — 83 % getroffen, 2 von 3 Wörtern wörtlich, 1 fast
 
-Wer es einbaut, sollte deshalb: den erwarteten Text als `initial_prompt` an
-Whisper geben, damit es die Namen kennt; vor dem Vergleich normalisieren
-(Kleinschreibung, Satzzeichen weg); pro Wort unscharf vergleichen
-(Levenshtein plus Kölner Phonetik), damit „Romane Conti“ durchgeht; und drei
-Zustände statt zwei zeigen – *sitzt*, *anders gesagt*, *fehlt*. Technisch
-gehört Whisper an dieselbe Stelle wie Piper: ein optionales CLI, das
-automatisch gesucht wird und dessen Fehlen den Rest nicht kaputt macht.
+Fünf Zustände, farbig: *sitzt*, *fast*, *anders gesagt*, *nicht gehört*,
+*zusätzlich*. Darunter steht immer, was die Erkennung tatsächlich verstanden
+hat – damit nachvollziehbar bleibt, wer sich verhört hat.
+
+**Das ist eine Gedächtnisstütze, kein Urteil.** Whisper liegt für Deutsch bei
+rund 4–7 % Wortfehlerrate unter guten Bedingungen; für „fehlt mir die halbe
+Replik?“ reicht das locker. Ausgerechnet die Wörter, auf die es im Theater
+ankommt, trifft die Erkennung aber am schlechtesten: Eigennamen, Dialekt,
+leises oder gespieltes Sprechen, kurze Einwürfe. Deshalb:
+
+- Verglichen wird **unscharf**: normalisiert (Kleinschreibung, Satzzeichen und
+  Akzente weg), dann per Levenshtein-Abstand und **Kölner Phonetik** – dem
+  deutschen Gegenstück zu Soundex. „Romane Conti“ zählt damit als *fast*,
+  „Meyer“ und „Mayr“ als dasselbe Wort. Kurze Wörter bekommen keine Toleranz,
+  „der“ und „den“ bleiben verschieden.
+- Der erwartete Satz geht **nicht** an die Erkennung. Whisper folgt einem
+  `--initial_prompt` sehr willig; bekäme es die Replik vorgesagt, schriebe es
+  sie auf, egal was gesagt wurde – ein Vergleich, der immer zustimmt, ist
+  schlechter als keiner. Übergeben werden nur die **Rollennamen** des Stücks,
+  die kein Erkenner erraten kann.
+- Stimmt der Text im Block nicht, korrigierst du ihn direkt in der Auflösung
+  („Text korrigieren“). Der Vergleich färbt sich sofort neu, ohne die
+  Erkennung noch einmal zu bemühen.
+
+#### Spracherkennung installieren
+
+Optional. Fehlt sie, bleibt der Schalter grau und alles andere funktioniert.
+
+```bash
+pip install openai-whisper
+```
+
+Gesucht wird wie bei Piper der Reihe nach `whisper`, `python -m whisper`,
+`python3 -m whisper`, `py -m whisper`. Das Modell steuert `WHISPER_MODEL`
+(Vorgabe `small`; `medium` ist genauer und langsamer, `base` umgekehrt). Beim
+ersten Lauf lädt Whisper das Modell herunter.
+
+Rechenzeit auf der CPU: ein paar Sekunden je Replik. Sie läuft, während die
+Auflösung abgespielt wird.
+
+| Variable | Zweck |
+|---|---|
+| `WHISPER_BIN` | fester Aufruf statt der automatischen Suche |
+| `WHISPER_MODEL` | Modellgröße (`tiny`…`large`), Vorgabe `small` |
+| `STT_CMD` | komplette Befehlszeile für andere Engines. Platzhalter `{audio}`, `{model}`, `{out}`; der Text wird von der Standardausgabe gelesen. Für whisper.cpp etwa: `STT_CMD='whisper-cli -m ggml-small.bin -f {audio} -l de -nt'` |
+| `THEATER_LOG_STT` | jeden Aufruf ins Server-Log schreiben |
 
 ### Die eigene Rolle als Pause
 
@@ -520,12 +557,14 @@ backend/
   internal/project/   # Projekte, Blöcke, Sprecher (JSON-Persistenz)
   internal/voices/    # Scan des voices/-Ordners
   internal/synth/     # Piper-Aufruf, Audio-Konkatenation, Jobs
+  internal/stt/       # optionale Spracherkennung für den Lernmodus
   internal/httpapi/   # HTTP-Router und Handler
 frontend/
   src/api/            # typisierter API-Client
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
                       # AutoDetect, SynthesizePanel, Rehearsal
-  src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf
+  src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf,
+                      # Wortvergleich (Levenshtein + Kölner Phonetik)
   src/pages/          # Projektliste und Editor
 ```
 
@@ -541,8 +580,10 @@ frontend/
 | `GET` | `/api/projects/{id}/pdf` | Original-PDF ausliefern |
 | `GET`/`PUT` | `/api/projects/{id}/blocks` | Blöcke laden/ersetzen |
 | `GET` | `/api/projects/{id}/blocks/{blockId}/audio` | einzelnen Block erzeugen/abspielen |
+| `POST` | `/api/projects/{id}/blocks/{blockId}/transcribe` | Mitschnitt (multipart `audio`) in Text verwandeln |
 | `GET`/`DELETE` | `/api/projects/{id}/cache` | Zwischenspeicher abfragen/leeren |
 | `GET`/`PUT` | `/api/projects/{id}/speakers` | Sprecher-Konfiguration |
+| `GET` | `/api/stt` | ob eine Spracherkennung gefunden wurde |
 | `GET` | `/api/voices` | installierte Piper-Modelle |
 | `POST` | `/api/voices/preview` | Hörprobe synthetisieren (WAV) |
 | `POST` | `/api/projects/{id}/synthesize` | Job starten, liefert `jobId`; Body: `skipMyRole`, `includeDirections`, optional `selection` |
@@ -592,8 +633,9 @@ cd backend && go vet ./... && go test ./... && go build ./...
 ```
 
 `go test` prüft die Audio-Bausteine (Resampling, Zeitdehnung, Tonhöhe), den
-Zwischenspeicher und die Zusammenstellung eines Durchlaufs: Reihenfolge der
-Auswahl, Sprungmarken, ausgesparte eigene Repliken, fehlende Stimmen.
+Zwischenspeicher, die Zusammenstellung eines Durchlaufs (Reihenfolge der
+Auswahl, Sprungmarken, ausgesparte eigene Repliken, fehlende Stimmen) und die
+Anbindung der Spracherkennung.
 
 Frontend typprüfen, testen und bauen:
 
@@ -607,8 +649,10 @@ Regieanweisungen, die mit einem Rollennamen beginnen,
 Repliken über Seitengrenzen, Seitenzahlen –, die Auswahl eines Ausschnitts –
 Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
 Auftritte, die Einzelauswahl und die Sprungmarken – und den Ablauf des
-Lernmodus: welche Schritte gehört und welche gesprochen werden und was beim
-Überspringen der Regieanweisungen übrig bleibt.
+Lernmodus: welche Schritte gehört und welche gesprochen werden, was beim
+Überspringen der Regieanweisungen übrig bleibt, und den Wortvergleich –
+Kölner Phonetik gegen die dokumentierten Beispiele, Levenshtein, und was bei
+fehlenden, zusätzlichen und anders gesagten Wörtern herauskommt.
 
 Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
 sein):

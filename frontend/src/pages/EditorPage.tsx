@@ -165,6 +165,11 @@ export default function EditorPage({ projectId, onBack }: Props) {
     }
   }
 
+  /** Fixing a wrong text from inside the rehearsal, without leaving the run. */
+  const correctBlock = (id: string, text: string) => {
+    mutateBlocks(blocks.map((b) => (b.id === id ? { ...b, text } : b)))
+  }
+
   const deleteBlock = (id: string) => {
     mutateBlocks(renumber(blocks.filter((b) => b.id !== id)))
     if (selectedId === id) setSelectedId(null)
@@ -355,6 +360,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
             project={project}
             blocks={blocks}
             speakers={speakers}
+            onCorrectBlock={correctBlock}
             onBeforeStart={save}
           />
         </Tabs.Panel>

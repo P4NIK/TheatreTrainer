@@ -20,6 +20,7 @@ import (
 	"github.com/bloodmage/theater-tts/backend/internal/config"
 	"github.com/bloodmage/theater-tts/backend/internal/httpapi"
 	"github.com/bloodmage/theater-tts/backend/internal/project"
+	"github.com/bloodmage/theater-tts/backend/internal/stt"
 	"github.com/bloodmage/theater-tts/backend/internal/synth"
 	"github.com/bloodmage/theater-tts/backend/internal/voices"
 )
@@ -35,6 +36,7 @@ func main() {
 	}
 	registry := voices.New(cfg.VoicesDir)
 	service := synth.NewService(cfg, store, registry)
+	recognizer := stt.New(cfg)
 
 	log.Printf("Daten:   %s", cfg.DataDir)
 	log.Printf("Stimmen: %s", cfg.VoicesDir)
@@ -48,9 +50,13 @@ func main() {
 		}
 	}
 
+	if info := recognizer.Info(); info.Available {
+		log.Printf("Erkennung: %s (Modell %s)", info.Command, info.Model)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.New(cfg, store, registry, service).Router(),
+		Handler:           httpapi.New(cfg, store, registry, service, recognizer).Router(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

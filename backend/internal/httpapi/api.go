@@ -12,6 +12,7 @@ import (
 
 	"github.com/bloodmage/theater-tts/backend/internal/config"
 	"github.com/bloodmage/theater-tts/backend/internal/project"
+	"github.com/bloodmage/theater-tts/backend/internal/stt"
 	"github.com/bloodmage/theater-tts/backend/internal/synth"
 	"github.com/bloodmage/theater-tts/backend/internal/voices"
 )
@@ -22,11 +23,12 @@ type API struct {
 	store    *project.Store
 	registry *voices.Registry
 	synth    *synth.Service
+	stt      *stt.Service
 }
 
 // New creates the API.
-func New(cfg *config.Config, store *project.Store, reg *voices.Registry, sv *synth.Service) *API {
-	return &API{cfg: cfg, store: store, registry: reg, synth: sv}
+func New(cfg *config.Config, store *project.Store, reg *voices.Registry, sv *synth.Service, st *stt.Service) *API {
+	return &API{cfg: cfg, store: store, registry: reg, synth: sv, stt: st}
 }
 
 // Router returns the fully wired chi router.
@@ -51,6 +53,7 @@ func (a *API) Router() http.Handler {
 				r.Get("/blocks", a.getBlocks)
 				r.Put("/blocks", a.putBlocks)
 				r.Get("/blocks/{blockId}/audio", a.getBlockAudio)
+				r.Post("/blocks/{blockId}/transcribe", a.transcribeBlock)
 				r.Get("/cache", a.cacheStatus)
 				r.Delete("/cache", a.clearCache)
 				r.Get("/speakers", a.getSpeakers)
@@ -62,6 +65,7 @@ func (a *API) Router() http.Handler {
 			})
 		})
 
+		r.Get("/stt", a.sttInfo)
 		r.Get("/voices", a.listVoices)
 		r.Post("/voices/preview", a.previewVoice)
 	})

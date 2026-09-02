@@ -5,7 +5,7 @@
  * playback stops and waits for you; afterwards it reads out what should have
  * been said, so you hear the difference right where you made it.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -19,23 +19,30 @@ import {
   Progress,
   Stack,
   Text,
+  Textarea,
   Title,
   Tooltip,
 } from '@mantine/core'
 import {
+  IconCheck,
   IconEye,
   IconMicrophone,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerSkipBack,
   IconPlayerSkipForward,
+  IconPencil,
   IconRepeat,
+  IconWaveSine,
   IconX,
 } from '@tabler/icons-react'
 
+import { ApiError, api } from '../../api/client'
+import { compareSpoken } from '../../lib/compare'
 import { contextBefore, upcomingBlockIDs, type Step } from '../../lib/rehearsal'
+import ComparisonView from './ComparisonView'
 import type { BlockAudio } from './useBlockAudio'
-import { useRecorder } from './useRecorder'
+import { useRecorder, type Take } from './useRecorder'
 
 export interface RunOptions {
   /** Read along with what the others say. */
@@ -45,13 +52,18 @@ export interface RunOptions {
   /** Seconds after which the pause ends by itself; null means you click. */
   autoAdvance: number | null
   record: boolean
+  /** Send the take to the local speech recognition and compare it. */
+  analyze: boolean
 }
 
 interface Props {
+  projectId: string
   steps: Step[]
   role: string
   options: RunOptions
   audio: BlockAudio
+  /** Fixing the text of a block right where the mistake showed up. */
+  onCorrectBlock: (blockId: string, text: string) => void
   onExit: () => void
 }
 
@@ -60,14 +72,26 @@ type Phase = 'listen' | 'speak' | 'reveal' | 'jump' | 'done'
 const phaseFor = (step: Step | undefined): Phase =>
   step === undefined ? 'done' : step.kind === 'speak' ? 'speak' : step.kind
 
-export default function RehearsalRun({ steps, role, options, audio, onExit }: Props) {
+export default function RehearsalRun({
+  projectId,
+  steps,
+  role,
+  options,
+  audio,
+  onCorrectBlock,
+  onExit,
+}: Props) {
   const [index, setIndex] = useState(0)
   const [phase, setPhase] = useState<Phase>(() => phaseFor(steps[0]))
   const [paused, setPaused] = useState(false)
   const [repeat, setRepeat] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [elapsed, setElapsed] = useState(0)
-  const [takes, setTakes] = useState<Record<number, string>>({})
+  const [takes, setTakes] = useState<Record<number, Take>>({})
+  const [heard, setHeard] = useState<Record<number, string>>({})
+  const [listening, setListening] = useState<number | null>(null)
+  const [sttError, setSttError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
 
   const rec = useRecorder()
@@ -87,6 +111,8 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
     (i: number) => {
       setRevealed(false)
       setElapsed(0)
+      setEditing(null)
+      setSttError(null)
       if (i < 0) return
       if (i >= steps.length) {
         setPhase('done')
@@ -109,8 +135,8 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
    */
   const stop = rec.stop
   const finishSpeaking = useCallback(async () => {
-    const url = await stop()
-    if (url) setTakes((t) => ({ ...t, [index]: url }))
+    const take = await stop()
+    if (take) setTakes((t) => ({ ...t, [index]: take }))
   }, [stop, index])
 
   const next = useCallback(async () => {
@@ -129,6 +155,18 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
     await finishSpeaking()
     goTo(phase === 'reveal' ? index : index - 1)
   }, [phase, index, finishSpeaking, goTo])
+
+  /**
+   * With a recording of your own the resolution is not the end of the step.
+   *
+   * Read through a ref inside the loop, never as a dependency: keeping the
+   * take flips this in the render *before* the phase moves on to 'reveal', and
+   * a loop that restarts on it would start a second recording of the pause it
+   * has just ended.
+   */
+  const waitAfterReveal = takes[index] !== undefined
+  const waitRef = useRef(false)
+  waitRef.current = waitAfterReveal
 
   // --- the loop ------------------------------------------------------------
   useEffect(() => {
@@ -154,6 +192,10 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
             el.src = url
             el.onended = () => {
               if (cancelled) return
+              // After the resolution the run waits when there is a take: you
+              // want to listen to yourself and read the comparison, and a run
+              // that jumps on takes that away.
+              if (phase === 'reveal' && waitRef.current) return
               // A short breath before the next line, as on stage.
               timer.current = window.setTimeout(advance, phase === 'reveal' ? 600 : 250)
             }
@@ -183,6 +225,33 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
     // values below and must not restart for anything else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, phase, paused, repeat])
+
+  // The recogniser runs while the resolution plays, so its few seconds are
+  // spent on something you are listening to anyway.
+  useEffect(() => {
+    const take = takes[index]
+    const block = steps[index]?.block
+    if (!options.analyze || !take || !block || heard[index] !== undefined) return
+
+    let cancelled = false
+    setListening(index)
+    setSttError(null)
+    api
+      .transcribe(projectId, block.id, take.blob)
+      .then((t) => !cancelled && setHeard((h) => ({ ...h, [index]: t.text })))
+      .catch((e) => {
+        if (cancelled) return
+        setSttError(
+          e instanceof ApiError && e.status === 424
+            ? e.message
+            : `Spracherkennung fehlgeschlagen: ${(e as Error).message}`,
+        )
+      })
+      .finally(() => !cancelled && setListening(null))
+    return () => {
+      cancelled = true
+    }
+  }, [takes, index, steps, options.analyze, heard, projectId])
 
   // Load the next few lines while the current one plays.
   useEffect(() => {
@@ -226,6 +295,15 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Recomputed whenever the transcript or the block text changes, so a
+  // correction re-colours the comparison without asking the recogniser again.
+  const comparison = useMemo(() => {
+    const text = steps[index]?.block?.text
+    const spoken = heard[index]
+    if (text === undefined || spoken === undefined) return null
+    return compareSpoken(text, spoken)
+  }, [steps, index, heard])
 
   const total = steps.length
   const percent = total === 0 ? 0 : Math.round(((index + (phase === 'done' ? 1 : 0)) / total) * 100)
@@ -366,20 +444,105 @@ export default function RehearsalRun({ steps, role, options, audio, onExit }: Pr
 
         {phase === 'reveal' && step?.block && (
           <Stack gap="sm">
-            <Group gap="xs">
-              <Badge color="green" variant="light">
-                {role} – so steht es im Buch
-              </Badge>
-              {waitingFor && <Loader size="xs" />}
+            <Group gap="xs" justify="space-between">
+              <Group gap="xs">
+                <Badge color="green" variant="light">
+                  {role} – so steht es im Buch
+                </Badge>
+                {waitingFor && <Loader size="xs" />}
+              </Group>
+              {editing === null && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="gray"
+                  leftSection={<IconPencil size={14} />}
+                  onClick={() => setEditing(step.block!.text)}
+                >
+                  Text korrigieren
+                </Button>
+              )}
             </Group>
-            <Text size="lg">{step.block.text}</Text>
+
+            {editing !== null ? (
+              <Stack gap="xs">
+                <Textarea
+                  autosize
+                  minRows={2}
+                  maxRows={10}
+                  value={editing}
+                  onChange={(e) => setEditing(e.currentTarget.value)}
+                  description="Stimmt der Text nicht mit dem Buch überein, korrigierst du ihn hier – gespeichert wird im Block."
+                />
+                <Group gap="xs">
+                  <Button
+                    size="compact-sm"
+                    leftSection={<IconCheck size={16} />}
+                    disabled={editing.trim() === ''}
+                    onClick={() => {
+                      const text = editing.trim()
+                      onCorrectBlock(step.block!.id, text)
+                      // The old rendering says something else now.
+                      audio.invalidate(step.block!.id)
+                      setEditing(null)
+                    }}
+                  >
+                    Übernehmen
+                  </Button>
+                  <Button
+                    size="compact-sm"
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => setEditing(null)}
+                  >
+                    Abbrechen
+                  </Button>
+                </Group>
+              </Stack>
+            ) : (
+              <Text size="lg">{step.block.text}</Text>
+            )}
+
             {takes[index] && (
               <Group gap="xs">
                 <Text size="xs" c="dimmed">
                   Deine Aufnahme:
                 </Text>
                 {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio controls src={takes[index]} style={{ height: 32 }} />
+                <audio controls src={takes[index].url} style={{ height: 32 }} />
+              </Group>
+            )}
+
+            {listening === index && (
+              <Group gap="xs">
+                <Loader size="xs" />
+                <Text size="xs" c="dimmed">
+                  Aufnahme wird ausgewertet …
+                </Text>
+              </Group>
+            )}
+            {sttError && listening !== index && (
+              <Alert color="yellow" title="Kein Vergleich möglich" p="xs">
+                <Text size="xs">{sttError}</Text>
+              </Alert>
+            )}
+            {comparison && <ComparisonView comparison={comparison} spoken={heard[index]} />}
+            {takes[index] && !options.analyze && (
+              <Text size="xs" c="dimmed">
+                <IconWaveSine
+                  size={13}
+                  style={{ verticalAlign: -2, marginRight: 4 }}
+                />
+                Zum Abgleich Wort für Wort in der Einrichtung „Gesagtes auswerten“ einschalten.
+              </Text>
+            )}
+
+            {waitAfterReveal && (
+              <Group>
+                <Button onClick={() => void next()}>Weiter</Button>
+                <Text size="xs" c="dimmed">
+                  Der Durchlauf wartet, solange du dir die Aufnahme anhörst.
+                </Text>
               </Group>
             )}
           </Stack>
