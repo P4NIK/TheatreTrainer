@@ -1,0 +1,52 @@
+# Zeilenenden vereinheitlichen.
+# Im Repository werden Textdateien immer mit LF gespeichert; im Working Tree
+# checkt Git sie plattformueblich aus (unter Windows also mit CRLF).
+# Damit entstehen keine Diffs mehr, die nur aus Zeilenenden bestehen.
+* text=auto
+
+# Quelltext und Konfiguration explizit als Text behandeln.
+*.go    text
+*.mod   text
+*.sum   text
+*.ts    text
+*.tsx   text
+*.js    text
+*.mjs   text
+*.json  text
+*.css   text
+*.html  text
+*.md    text
+*.yml   text
+*.yaml  text
+
+# Diese Dateien werden in Linux-Containern ausgefuehrt bzw. gelesen und
+# brauchen dort zwingend LF, sonst schlagen sie fehl.
+*.sh                text eol=lf
+Dockerfile          text eol=lf
+Dockerfile.*        text eol=lf
+*.dockerfile        text eol=lf
+docker-compose.yml  text eol=lf
+docker-compose.*.yml text eol=lf
+.dockerignore       text eol=lf
+
+# Windows-Skripte brauchen umgekehrt CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaerdateien niemals konvertieren.
+*.onnx  binary
+*.pdf   binary
+*.wav   binary
+*.mp3   binary
+*.ogg   binary
+*.flac  binary
+*.m4a   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
