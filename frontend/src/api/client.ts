@@ -7,6 +7,7 @@ import type {
   Block,
   CacheStatus,
   Job,
+  ProgressInput,
   Project,
   Speakers,
   SttInfo,
@@ -72,6 +73,20 @@ export const api = {
 
   deleteProject: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  /**
+   * Where the rehearsal stands. This gets written repeatedly while a run is
+   * going, so it has a route of its own instead of riding along on
+   * updateProject, where it could race a rename into the same file. Both calls
+   * answer with the whole project, so the caller stays current without asking
+   * again.
+   */
+  saveProgress: (id: string, progress: ProgressInput) =>
+    request<Project>(`/projects/${id}/progress`, json(progress)),
+
+  /** "Start over": forget the saved position. */
+  clearProgress: (id: string) =>
+    request<Project>(`/projects/${id}/progress`, { method: 'DELETE' }),
 
   /** URL of the original PDF – handed to react-pdf directly. */
   pdfUrl: (id: string) => `${BASE}/projects/${id}/pdf`,

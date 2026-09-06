@@ -8,7 +8,56 @@ export interface Project {
   createdAt: string
   /** Speaker name of your own role, or "" if none is selected. */
   myRole: string
+  /** Where the last rehearsal run stopped; absent until one has been run. */
+  progress?: Progress | null
 }
+
+/** Which part of the play a run covers. */
+export type SelectionMode = 'all' | 'pages' | 'role' | 'blocks'
+
+/** The setup of a run – mirrors project.RunSelection on the server. */
+export interface RunSelection {
+  mode: SelectionMode
+  /** Page range, used by mode 'pages'. */
+  fromPage: number
+  toPage: number
+  /** Blocks kept before and after each of your own lines, used by mode 'role'. */
+  lead: number
+  trail: number
+  /** Two stretches closer than this many blocks are joined instead of split. */
+  mergeGap: number
+  /** Hand-picked block IDs, used by mode 'blocks'. Order does not matter. */
+  blockIds: string[]
+  /** Announce the page before every stretch that does not follow the previous one. */
+  announce: boolean
+}
+
+/**
+ * Where the last rehearsal run stopped.
+ *
+ * The anchor is the block, not the step number: blocks get edited, re-ordered
+ * and re-cut, and a bare index would quietly slide to a different line. Order
+ * and page are kept alongside so a block that has dropped out of the selection
+ * can still be resolved to the nearest position.
+ */
+export interface Progress {
+  blockId: string
+  page: number
+  order: number
+  /** The part that was rehearsed, not necessarily the project's own role. */
+  role: string
+  /** For the summary line only – the position is resolved from blockId. */
+  index: number
+  total: number
+  selection?: RunSelection
+  /** A finished run: then starting over is the honest offer, not carrying on. */
+  done: boolean
+  /** Stamped by the server. */
+  updatedAt: string
+}
+
+/** What the client sends – the server owns the timestamp. */
+export type ProgressInput = Omit<Progress, 'updatedAt'>
 
 /** Selection rectangle in page-relative coordinates (0..1). */
 export interface Rect {

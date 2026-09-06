@@ -89,6 +89,41 @@ func (a *API) deleteProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// putProgress stores where the rehearsal run currently stands. It gets its own
+// route rather than riding along on updateProject because a running rehearsal
+// writes it every few seconds, and that should not be able to race a rename or
+// a role change into the same file.
+func (a *API) putProgress(w http.ResponseWriter, r *http.Request) {
+	var pr project.Progress
+	if err := decodeJSON(r, &pr); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	// The block is the anchor the position is resolved from later; without it
+	// there is nothing to come back to.
+	if strings.TrimSpace(pr.BlockID) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("Feld \"blockId\" fehlt"))
+		return
+	}
+	p, err := a.store.SaveProgress(chi.URLParam(r, "id"), pr)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+// deleteProgress is "start over": the position is forgotten, the project keeps
+// everything else.
+func (a *API) deleteProgress(w http.ResponseWriter, r *http.Request) {
+	p, err := a.store.ClearProgress(chi.URLParam(r, "id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
 func (a *API) getPDF(w http.ResponseWriter, r *http.Request) {
 	path, err := a.store.PDFPath(chi.URLParam(r, "id"))
 	if err != nil {

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  anchorAt,
   buildSteps,
   contextBefore,
+  describeWhen,
   estimatedSeconds,
+  indexOfPage,
   isOwnLine,
+  pagesOf,
+  resumeIndex,
   statsOf,
   upcomingBlockIDs,
 } from './rehearsal'
@@ -112,5 +117,141 @@ describe('estimatedSeconds', () => {
   it('wächst mit der Länge, bleibt aber immer spürbar', () => {
     expect(estimatedSeconds('Ja.')).toBe(2)
     expect(estimatedSeconds('x'.repeat(130))).toBe(10)
+  })
+})
+
+// --- where a run begins ----------------------------------------------------
+
+function onPage(id: string, order: number, page: number, speaker: string | null = 'SIR'): Block {
+  return { ...block(id, order, speaker), page }
+}
+
+/** Pages deliberately have gaps: a play does not start on page 1 of a scene. */
+const paged: Block[] = [
+  onPage('a', 1, 1),
+  onPage('b', 2, 2),
+  onPage('c', 3, 2, 'HUGO'),
+  onPage('d', 4, 5),
+]
+const all = buildSteps(
+  paged.map((b) => ({ blockId: b.id })),
+  paged,
+  'HUGO',
+)
+/** A selection with a hole in it, so the jump marker is in play. */
+const gapped = buildSteps(
+  [{ blockId: 'a' }, { announce: 'Weiter auf Seite 5.' }, { blockId: 'd' }],
+  paged,
+  'HUGO',
+)
+
+describe('pagesOf', () => {
+  it('nennt die Seiten, auf denen etwas liegt, ohne Dopplungen', () => {
+    expect(pagesOf(all)).toEqual([1, 2, 5])
+  })
+
+  it('ist bei leerem Durchlauf leer', () => {
+    expect(pagesOf([])).toEqual([])
+  })
+})
+
+describe('indexOfPage', () => {
+  it('findet den ersten Schritt auf der Seite', () => {
+    expect(indexOfPage(all, 2)).toBe(1)
+  })
+
+  it('nimmt die nächste vorhandene Seite, wenn die gewünschte leer ist', () => {
+    expect(indexOfPage(all, 3)).toBe(3)
+  })
+
+  it('meldet hinter der letzten Seite -1, statt stillschweigend vorn zu beginnen', () => {
+    expect(indexOfPage(all, 6)).toBe(-1)
+  })
+
+  it('beginnt auf der Sprungmarke, nicht dahinter', () => {
+    // Without "Weiter auf Seite 5." you land in the scene not knowing where.
+    expect(gapped[1].kind).toBe('jump')
+    expect(indexOfPage(gapped, 5)).toBe(1)
+  })
+})
+
+describe('anchorAt', () => {
+  it('nimmt den nächsten echten Schritt, wenn die Stelle eine Sprungmarke ist', () => {
+    expect(anchorAt(gapped, 1)?.id).toBe('d')
+  })
+
+  it('fällt hinter dem Ende auf den letzten Schritt zurück', () => {
+    expect(anchorAt(all, 99)?.id).toBe('d')
+  })
+
+  it('hat bei leerem Durchlauf nichts anzubieten', () => {
+    expect(anchorAt([], 0)).toBeUndefined()
+  })
+})
+
+describe('resumeIndex', () => {
+  it('findet den gemerkten Block selbst', () => {
+    expect(resumeIndex(all, { blockId: 'c', order: 3, page: 2 })).toEqual({
+      index: 2,
+      match: 'exact',
+    })
+  })
+
+  it('weicht auf die Lesereihenfolge aus, wenn der Block fehlt', () => {
+    // Deleted in the editor, or cut away by a different selection.
+    expect(resumeIndex(all, { blockId: 'weg', order: 3, page: 2 })).toEqual({
+      index: 2,
+      match: 'nearest',
+    })
+  })
+
+  it('weicht auf die Seite aus, wenn die Reihenfolge nichts findet', () => {
+    // Re-ordered blocks: the page is the last thing still recognisable.
+    const shuffled = [onPage('x', 1, 9), onPage('y', 2, 1)]
+    const steps = buildSteps(
+      shuffled.map((b) => ({ blockId: b.id })),
+      shuffled,
+      'HUGO',
+    )
+    expect(resumeIndex(steps, { blockId: 'weg', order: 50, page: 9 })).toEqual({
+      index: 0,
+      match: 'nearest',
+    })
+  })
+
+  it('sagt es, wenn die Stelle gar nicht in die Auswahl passt', () => {
+    expect(resumeIndex(all, { blockId: 'weg', order: 99, page: 99 })).toEqual({
+      index: 0,
+      match: 'lost',
+    })
+  })
+
+  it('landet auf der Sprungmarke vor dem gemerkten Block', () => {
+    expect(resumeIndex(gapped, { blockId: 'd', order: 4, page: 5 })).toEqual({
+      index: 1,
+      match: 'exact',
+    })
+  })
+})
+
+describe('describeWhen', () => {
+  const now = new Date('2026-03-12T20:00:00Z')
+  const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString()
+
+  it('bleibt bei kurz Zurückliegendem ungenau', () => {
+    expect(describeWhen(ago(0), now)).toBe('gerade eben')
+    expect(describeWhen(ago(1), now)).toBe('vor 1 Minute')
+    expect(describeWhen(ago(40), now)).toBe('vor 40 Minuten')
+    expect(describeWhen(ago(3 * 60), now)).toBe('vor 3 Stunden')
+  })
+
+  it('wechselt zu Tagen und dann zum Datum', () => {
+    expect(describeWhen(ago(24 * 60), now)).toBe('gestern')
+    expect(describeWhen(ago(3 * 24 * 60), now)).toBe('vor 3 Tagen')
+    expect(describeWhen(ago(40 * 24 * 60), now)).toMatch(/^\d{2}\.\d{2}\.\d{4}$/)
+  })
+
+  it('bleibt bei kaputtem Zeitstempel still, statt „Invalid Date“ zu zeigen', () => {
+    expect(describeWhen('kein datum', now)).toBe('')
   })
 })

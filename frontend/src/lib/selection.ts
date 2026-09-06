@@ -8,27 +8,18 @@
  * list of blocks, plus optional spoken markers where something was left out,
  * so it stays clear where in the play you are.
  */
-import type { Block, Project, SelectionItem } from '../types'
+import type { Block, Project, RunSelection, SelectionItem, SelectionMode } from '../types'
 
-export type { SelectionItem }
+export type { SelectionItem, SelectionMode }
 
-export type SelectionMode = 'all' | 'pages' | 'role' | 'blocks'
-
-export interface SelectionSettings {
-  mode: SelectionMode
-  /** Page range, used by mode 'pages'. */
-  fromPage: number
-  toPage: number
-  /** Blocks kept before and after each of your own lines, used by mode 'role'. */
-  lead: number
-  trail: number
-  /** Two stretches closer than this many blocks are joined instead of split. */
-  mergeGap: number
-  /** Hand-picked block IDs, used by mode 'blocks'. Order does not matter. */
-  blockIds: string[]
-  /** Announce the page before every stretch that does not follow the previous one. */
-  announce: boolean
-}
+/**
+ * The settings of a selection.
+ *
+ * Same shape as the server's RunSelection: a run is stored alongside the
+ * rehearsal position so that carrying on later restores the same cut of the
+ * play, and one shared type keeps that from needing a translation layer.
+ */
+export type SelectionSettings = RunSelection
 
 export interface Stretch {
   from: number

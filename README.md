@@ -36,6 +36,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - **Lernmodus**: interaktiv proben – alles wird vorgelesen, bei der eigenen
   Rolle hält der Durchlauf an, danach kommt die Auflösung. Optional mit
   Mitschnitt und Wort-für-Wort-Vergleich per lokaler Spracherkennung
+- Der Lernmodus merkt sich, wo du aufgehört hast, und bietet beim nächsten Mal
+  Weitermachen oder Von-vorne an; mit „Ab Seite“ steigst du an jeder Stelle ein
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -437,6 +439,7 @@ Vor dem Start stellst du ein:
 |---|---|
 | **Deine Rolle** | Bei ihr hält der Durchlauf an. Muss nicht die im Projekt hinterlegte Rolle sein – so übst du auch eine Zweitbesetzung |
 | **Welcher Teil** | dieselbe Auswahl wie bei der Hörfassung: ganzes Stück, Seitenbereich, deine Auftritte, einzelne Blöcke |
+| **Ab Seite** | wo der Durchlauf einsetzt – unabhängig von der Auswahl, siehe unten |
 | **Regieanweisungen mitlesen** | aus überspringt sie – dann läuft nur der Dialog |
 | **Text der anderen mitlesen** | aus heißt: nur zuhören, näher an der echten Probe |
 | **Eigenen Text während der Pause zeigen** | für den ersten Durchgang; sonst deckst du ihn bei Bedarf auf |
@@ -460,6 +463,47 @@ mit Piper erzeugt (ein paar Sekunden) und liegt danach im selben
 Zwischenspeicher, den auch die Hörfassung nutzt. Während eine Replik läuft,
 werden die nächsten vier im Hintergrund geladen; „Vorbereiten“ erledigt vorab
 den ganzen Ausschnitt, dann läuft der Durchlauf ohne Stocken.
+
+### Wo der Durchlauf beginnt
+
+Ein Stück übt man selten am Stück. Zwei Wege führen mitten hinein.
+
+**Ab Seite.** Über dem Startknopf steht ein Feld „Ab Seite“. Es gilt
+unabhängig davon, welchen Teil du gewählt hast: Die Auswahl bleibt, wie sie
+ist – der Durchlauf setzt nur an der ersten Replik ab dieser Seite ein.
+Daneben steht, welche Replik das ist, damit du vor dem Start siehst, ob du
+richtig gelandet bist. Liegt auf der Seite nichts aus der Auswahl, wird die
+nächste genommen, auf der etwas liegt; hinter der letzten sagt die App es und
+beginnt vorn. „Vorbereiten“ erzeugt dann ebenfalls erst ab dieser Stelle –
+Repliken davor wird dieser Durchlauf nie erreichen.
+
+**Weitermachen.** Der Lernmodus merkt sich, wo du aufgehört hast: im Durchlauf
+etwa alle anderthalb Sekunden und noch einmal beim Beenden. Beim nächsten Mal
+steht oben eine Karte:
+
+> **Weitermachen** · ILL · Seite 12 · Schritt 42 von 120 · vor 2 Tagen
+> [ Weiter ab Seite 12 ] [ Von vorne ] [ vergessen ]
+
+„Weiter“ stellt Rolle und Auswahl wieder her, mit denen du geübt hast, und
+setzt an der gemerkten Replik an – eine Stelle ohne den Zuschnitt, aus dem sie
+stammt, zeigt sonst woandershin. „Von vorne“ ist der Netflix-Knopf: derselbe
+Ausschnitt, aber wieder ab der ersten Replik. „Vergessen“ räumt die Karte weg,
+ohne etwas zu starten. Nach einem vollständigen Durchlauf heißt die Karte
+„Zuletzt durchgelaufen“ und bietet nur noch „Von vorne“ an – an einem Ende
+kann man nicht weiterlaufen.
+
+Gemerkt wird die **Replik**, nicht die Schrittnummer. Blöcke werden ja weiter
+korrigiert, umsortiert und neu zugeschnitten, und eine bloße Nummer würde
+still auf eine andere Zeile rutschen. Fehlt die gemerkte Replik – gelöscht,
+oder von der Auswahl nicht erfasst –, wird über die Lesereihenfolge und
+notfalls über die Seite die nächstgelegene Stelle genommen, und die App sagt
+dazu, dass sie das getan hat. Liegt eine Sprungmarke („Weiter auf Seite 12.“)
+direkt davor, beginnt der Durchlauf auf ihr: Sie ist der Satz, der sagt, wo
+man ist.
+
+Die Stelle steht in `project.json`, nicht im Browser. Sie überlebt damit einen
+anderen Browser und einen geleerten Zwischenspeicher und liegt in derselben
+Sicherung wie das übrige Projekt.
 
 ### Gesagtes auswerten
 
@@ -533,7 +577,7 @@ zugewiesen, ist die Länge unbekannt; dann gibt es die feste Pause aus
 
 ```
 data/projects/<projekt-id>/
-  project.json    # Name, PDF, Seitenzahl, eigene Rolle
+  project.json    # Name, PDF, Seitenzahl, eigene Rolle, zuletzt geübte Stelle
   blocks.json     # markierte Blöcke mit relativen Koordinaten und Text
   speakers.json   # Stimme, Tonhöhe, Tempo, Lautstärke und Farbe je Sprecher
   source.pdf      # das importierte Stück
@@ -577,6 +621,8 @@ frontend/
 | `GET` | `/api/projects/{id}` | Projektdetails |
 | `PUT` | `/api/projects/{id}` | Name, eigene Rolle, Seitenzahl ändern |
 | `DELETE` | `/api/projects/{id}` | Projekt löschen |
+| `PUT` | `/api/projects/{id}/progress` | zuletzt geübte Stelle merken (Block, Seite, Rolle, Auswahl) |
+| `DELETE` | `/api/projects/{id}/progress` | gemerkte Stelle vergessen |
 | `GET` | `/api/projects/{id}/pdf` | Original-PDF ausliefern |
 | `GET`/`PUT` | `/api/projects/{id}/blocks` | Blöcke laden/ersetzen |
 | `GET` | `/api/projects/{id}/blocks/{blockId}/audio` | einzelnen Block erzeugen/abspielen |

@@ -2,7 +2,7 @@
  * Setting up a rehearsal run: which role, which part of the play, and how much
  * help you want. The run itself lives in RehearsalRun.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -17,16 +17,28 @@ import {
   Text,
   Title,
 } from '@mantine/core'
-import { IconAlertTriangle, IconPlayerPlay } from '@tabler/icons-react'
+import { IconAlertTriangle, IconHistory, IconPlayerPlay, IconRepeat } from '@tabler/icons-react'
 
 import { api } from '../../api/client'
 
 import { speakerNames } from '../../lib/blocks'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
-import { buildSteps, statsOf, upcomingBlockIDs } from '../../lib/rehearsal'
+import {
+  anchorAt,
+  buildSteps,
+  describeWhen,
+  indexOfPage,
+  pagesOf,
+  resumeIndex,
+  statsOf,
+  upcomingBlockIDs,
+} from '../../lib/rehearsal'
 import {
   DIRECTION_KEY,
   type Block,
+  // Mantine has a Progress component of its own, and both are on this screen.
+  type Progress as SavedProgress,
+  type ProgressInput,
   type Project,
   type Speakers,
   type SttInfo,
@@ -34,6 +46,17 @@ import {
 import SelectionCard from '../SynthesizePanel/SelectionCard'
 import RehearsalRun, { type RunOptions } from './RehearsalRun'
 import { useBlockAudio } from './useBlockAudio'
+
+/** Why the run starts where it starts – this drives the line under the field. */
+type StartReason = 'begin' | 'page' | 'page-empty' | 'resume' | 'resume-nearest' | 'resume-lost'
+
+interface StartInfo {
+  index: number
+  reason: StartReason
+}
+
+const shorten = (text: string, max = 48) =>
+  text.length > max ? `${text.slice(0, max).trimEnd()} …` : text
 
 interface Props {
   project: Project
@@ -71,6 +94,15 @@ export default function RehearsalPanel({
   const [preparing, setPreparing] = useState<number | null>(null)
   const [starting, setStarting] = useState(false)
 
+  // The saved position is kept here rather than pushed back into the project
+  // above: replacing the project object on every write would rebuild the step
+  // list mid-run, and the running rehearsal would notice.
+  const [progress, setProgress] = useState<SavedProgress | null>(project.progress ?? null)
+  const [startPage, setStartPage] = useState<number | null>(null)
+  const [resuming, setResuming] = useState(false)
+  const [pending, setPending] = useState<'resume' | 'restart' | null>(null)
+  const [runIndex, setRunIndex] = useState(0)
+
   const audio = useBlockAudio(project.id)
 
   useEffect(() => {
@@ -92,6 +124,47 @@ export default function RehearsalPanel({
     [picked],
   )
 
+  const pages = useMemo(() => pagesOf(steps), [steps])
+  const firstPage = pages[0] ?? 1
+  const lastPage = pages[pages.length - 1] ?? Math.max(1, project.pageCount)
+
+  /**
+   * Where the run begins. Both ways in lead here: the remembered position and a
+   * page picked by hand ask the same question – which step comes first.
+   */
+  const startInfo = useMemo((): StartInfo => {
+    if (resuming && progress) {
+      const point = resumeIndex(steps, progress)
+      if (point.match === 'lost') return { index: 0, reason: 'resume-lost' }
+      return { index: point.index, reason: point.match === 'exact' ? 'resume' : 'resume-nearest' }
+    }
+    if (startPage !== null) {
+      const i = indexOfPage(steps, startPage)
+      return i >= 0 ? { index: i, reason: 'page' } : { index: 0, reason: 'page-empty' }
+    }
+    return { index: 0, reason: 'begin' }
+  }, [resuming, progress, startPage, steps])
+
+  const startStep = steps[startInfo.index]
+  const startLabel = startStep?.block
+    ? `${startStep.block.type === 'direction' ? 'Regie' : startStep.block.speaker}: „${shorten(startStep.block.text)}“`
+    : (startStep?.announce ?? '')
+
+  const startHint = (() => {
+    switch (startInfo.reason) {
+      case 'page-empty':
+        return `Ab Seite ${startPage} liegt nichts in dieser Auswahl – es geht vorne los.`
+      case 'resume-lost':
+        return 'Die gemerkte Stelle kommt in dieser Auswahl nicht vor – es geht vorne los.'
+      case 'begin':
+        return 'Der Durchlauf beginnt am Anfang der Auswahl.'
+      case 'resume-nearest':
+        return `Die gemerkte Replik fehlt in dieser Auswahl – weiter bei ${startLabel} · Schritt ${startInfo.index + 1} von ${stats.total}`
+      default:
+        return `Beginnt bei ${startLabel} · Schritt ${startInfo.index + 1} von ${stats.total}`
+    }
+  })()
+
   const set = <K extends keyof RunOptions>(key: K, value: RunOptions[K]) =>
     setOptions((o) => ({ ...o, [key]: value }))
 
@@ -109,7 +182,9 @@ export default function RehearsalPanel({
   const roleHasVoice = role !== '' && !!speakers[role]?.model
 
   const prepare = async () => {
-    const ids = upcomingBlockIDs(steps, 0, steps.length)
+    // Only from the starting point on – rendering the pages before it is time
+    // spent on lines this run will never reach.
+    const ids = upcomingBlockIDs(steps, startInfo.index, steps.length)
     setPreparing(0)
     for (let i = 0; i < ids.length; i++) {
       await audio.get(ids[i]).catch(() => undefined)
@@ -118,15 +193,82 @@ export default function RehearsalPanel({
     setPreparing(null)
   }
 
-  const start = async () => {
+  const start = async (at: number) => {
     setStarting(true)
     try {
       await onBeforeStart()
+      setRunIndex(at)
       setRunning(true)
     } finally {
       setStarting(false)
     }
   }
+
+  /**
+   * Writing the position down. Errors are swallowed on purpose: a rehearsal
+   * that stops because a bookmark could not be saved would be the worse bug.
+   */
+  const handleProgress = useCallback(
+    (i: number, done: boolean) => {
+      const block = anchorAt(steps, i)
+      if (!block) return
+      const body: ProgressInput = {
+        blockId: block.id,
+        page: block.page,
+        order: block.order,
+        role,
+        index: i,
+        total: steps.length,
+        selection,
+        done,
+      }
+      api
+        .saveProgress(project.id, body)
+        .then((p) => setProgress(p.progress ?? null))
+        .catch(() => undefined)
+    },
+    [steps, role, selection, project.id],
+  )
+
+  /**
+   * Carrying on restores the run the position came from – role and selection
+   * first, because a position without the cut it was taken from points at a
+   * different line. Starting has to wait for the next render, when the steps
+   * have been rebuilt from those settings.
+   */
+  const resume = () => {
+    if (!progress) return
+    setRole(progress.role)
+    if (progress.selection) setSelection(progress.selection)
+    setStartPage(null)
+    setResuming(true)
+    setPending('resume')
+  }
+
+  /** Netflix's "start over": from the top, and the position moves along as usual. */
+  const restart = () => {
+    setStartPage(null)
+    setResuming(false)
+    setPending('restart')
+  }
+
+  /** Dropping the bookmark without starting anything. */
+  const forget = () => {
+    setResuming(false)
+    api
+      .clearProgress(project.id)
+      .then(() => setProgress(null))
+      .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    if (pending === null) return
+    setPending(null)
+    void start(pending === 'resume' ? startInfo.index : 0)
+    // `start` is rebuilt on every render; this effect is driven by `pending`
+    // alone and reads the starting point of the render that set it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, startInfo.index])
 
   if (running) {
     return (
@@ -136,6 +278,8 @@ export default function RehearsalPanel({
         role={role}
         options={options}
         audio={audio}
+        startIndex={runIndex}
+        onProgress={handleProgress}
         onCorrectBlock={onCorrectBlock}
         onExit={() => setRunning(false)}
       />
@@ -151,6 +295,45 @@ export default function RehearsalPanel({
           und danach hörst du, was im Buch steht.
         </Text>
       </div>
+
+      {progress && (
+        <Card withBorder padding="md" bg="var(--mantine-color-blue-light)">
+          <Group justify="space-between" wrap="nowrap" gap="md" align="flex-start">
+            <Stack gap={2}>
+              <Group gap="xs">
+                <IconHistory size={18} />
+                <Text fw={600}>{progress.done ? 'Zuletzt durchgelaufen' : 'Weitermachen'}</Text>
+              </Group>
+              <Text size="sm" c="dimmed">
+                {progress.role || 'ohne Rolle'} · Seite {progress.page} · Schritt{' '}
+                {progress.index + 1} von {progress.total} · {describeWhen(progress.updatedAt)}
+              </Text>
+            </Stack>
+            <Group gap="xs" wrap="nowrap">
+              {!progress.done && (
+                <Button
+                  leftSection={<IconPlayerPlay size={18} />}
+                  onClick={resume}
+                  disabled={starting || blocks.length === 0}
+                >
+                  Weiter ab Seite {progress.page}
+                </Button>
+              )}
+              <Button
+                variant={progress.done ? 'filled' : 'light'}
+                leftSection={<IconRepeat size={18} />}
+                onClick={restart}
+                disabled={starting || stats.total === 0}
+              >
+                Von vorne
+              </Button>
+              <Button variant="subtle" color="gray" size="compact-sm" onClick={forget}>
+                vergessen
+              </Button>
+            </Group>
+          </Group>
+        </Card>
+      )}
 
       <Card withBorder padding="md">
         <Stack gap="sm">
@@ -282,6 +465,32 @@ export default function RehearsalPanel({
                 }.`}
           </Text>
 
+          {stats.total > 0 && (
+            <Group align="flex-start" gap="sm" wrap="nowrap">
+              <NumberInput
+                label="Ab Seite"
+                description={
+                  firstPage === lastPage
+                    ? `Auswahl liegt auf S. ${firstPage}`
+                    : `Auswahl: S. ${firstPage}–${lastPage}`
+                }
+                placeholder="von vorn"
+                w={170}
+                min={firstPage}
+                max={lastPage}
+                value={startPage ?? ''}
+                onChange={(v) => {
+                  const n = typeof v === 'number' ? v : Number.parseInt(String(v), 10)
+                  setResuming(false)
+                  setStartPage(Number.isFinite(n) ? n : null)
+                }}
+              />
+              <Text size="xs" c="dimmed" pt={30} style={{ flex: 1 }}>
+                {startHint}
+              </Text>
+            </Group>
+          )}
+
           {preparing !== null ? (
             <Stack gap={4}>
               <Progress value={preparing} animated />
@@ -300,11 +509,11 @@ export default function RehearsalPanel({
           <Group>
             <Button
               leftSection={<IconPlayerPlay size={18} />}
-              onClick={() => void start()}
+              onClick={() => void start(startInfo.index)}
               loading={starting}
               disabled={stats.total === 0 || preparing !== null}
             >
-              Probe starten
+              {startInfo.index > 0 ? 'Ab hier starten' : 'Probe starten'}
             </Button>
             <Button
               variant="light"

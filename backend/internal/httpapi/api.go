@@ -49,6 +49,8 @@ func (a *API) Router() http.Handler {
 				r.Get("/", a.getProject)
 				r.Put("/", a.updateProject)
 				r.Delete("/", a.deleteProject)
+				r.Put("/progress", a.putProgress)
+				r.Delete("/progress", a.deleteProgress)
 				r.Get("/pdf", a.getPDF)
 				r.Get("/blocks", a.getBlocks)
 				r.Put("/blocks", a.putBlocks)

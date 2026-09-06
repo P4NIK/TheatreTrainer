@@ -62,6 +62,13 @@ interface Props {
   role: string
   options: RunOptions
   audio: BlockAudio
+  /** The step the run begins at – carrying on, or a chosen page. */
+  startIndex?: number
+  /**
+   * Reports where the run stands, so it can be picked up another day. Called
+   * with the last step and `done` once the run reaches the end.
+   */
+  onProgress?: (index: number, done: boolean) => void
   /** Fixing the text of a block right where the mistake showed up. */
   onCorrectBlock: (blockId: string, text: string) => void
   onExit: () => void
@@ -78,11 +85,13 @@ export default function RehearsalRun({
   role,
   options,
   audio,
+  startIndex = 0,
+  onProgress,
   onCorrectBlock,
   onExit,
 }: Props) {
-  const [index, setIndex] = useState(0)
-  const [phase, setPhase] = useState<Phase>(() => phaseFor(steps[0]))
+  const [index, setIndex] = useState(startIndex)
+  const [phase, setPhase] = useState<Phase>(() => phaseFor(steps[startIndex]))
   const [paused, setPaused] = useState(false)
   const [repeat, setRepeat] = useState(0)
   const [revealed, setRevealed] = useState(false)
@@ -258,6 +267,32 @@ export default function RehearsalRun({
     audio.prefetch(upcomingBlockIDs(steps, index, 4))
   }, [audio, steps, index])
 
+  /**
+   * Remembering the position.
+   *
+   * Through a ref, never as a dependency: the callback is rebuilt on every
+   * render of the panel above, and depending on it would restart the timer
+   * constantly. Delayed by a moment as well, so skipping through five lines
+   * leaves one mark instead of five.
+   */
+  const report = useRef(onProgress)
+  report.current = onProgress
+  useEffect(() => {
+    if (steps.length === 0) return
+    if (phase === 'done') {
+      report.current?.(steps.length - 1, true)
+      return
+    }
+    const id = window.setTimeout(() => report.current?.(index, false), 1500)
+    return () => window.clearTimeout(id)
+  }, [index, phase, steps.length])
+
+  /** Leaving early still counts – the position is written out before the exit. */
+  const exit = useCallback(() => {
+    if (phase !== 'done' && steps.length > 0) report.current?.(index, false)
+    onExit()
+  }, [phase, index, steps.length, onExit])
+
   // A stopwatch during your line – it makes a silent pause feel less endless.
   useEffect(() => {
     if (phase !== 'speak' || paused) return
@@ -324,7 +359,7 @@ export default function RehearsalRun({
             <Button onClick={() => goTo(0)} leftSection={<IconRepeat size={18} />}>
               Noch einmal
             </Button>
-            <Button variant="subtle" onClick={onExit}>
+            <Button variant="subtle" onClick={exit}>
               Zurück zur Einrichtung
             </Button>
           </Group>
@@ -351,7 +386,7 @@ export default function RehearsalRun({
             </Badge>
           )}
         </Group>
-        <Button variant="subtle" color="gray" size="compact-sm" leftSection={<IconX size={16} />} onClick={onExit}>
+        <Button variant="subtle" color="gray" size="compact-sm" leftSection={<IconX size={16} />} onClick={exit}>
           Beenden
         </Button>
       </Group>

@@ -156,6 +156,44 @@ func (s *Store) Update(id string, u ProjectUpdate) (Project, error) {
 	return p, nil
 }
 
+// SaveProgress records where a rehearsal run currently stands.
+//
+// This is written often – roughly once per line of a running rehearsal – so it
+// touches nothing else in the project file and the timestamp is set here rather
+// than trusted from the request: a clock skewed on the client would make "last
+// rehearsed" nonsense.
+func (s *Store) SaveProgress(id string, pr Progress) (Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, err := s.readProject(id)
+	if err != nil {
+		return Project{}, err
+	}
+	pr.UpdatedAt = time.Now()
+	p.Progress = &pr
+	if err := writeJSON(filepath.Join(s.root, id, fileProject), p); err != nil {
+		return Project{}, err
+	}
+	return p, nil
+}
+
+// ClearProgress forgets the saved position – "start over" in the UI.
+func (s *Store) ClearProgress(id string) (Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, err := s.readProject(id)
+	if err != nil {
+		return Project{}, err
+	}
+	p.Progress = nil
+	if err := writeJSON(filepath.Join(s.root, id, fileProject), p); err != nil {
+		return Project{}, err
+	}
+	return p, nil
+}
+
 // Delete removes a project including its PDF and generated audio.
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
