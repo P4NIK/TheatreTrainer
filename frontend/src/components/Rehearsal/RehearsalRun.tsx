@@ -116,6 +116,38 @@ export default function RehearsalRun({
     timer.current = null
   }
 
+  // Read inside `forget`, which must not depend on the takes to stay stable.
+  const takesRef = useRef(takes)
+  takesRef.current = takes
+
+  /**
+   * Throws away the attempt stored for one step.
+   *
+   * Both halves have to go. The take alone is overwritten by the next
+   * recording anyway – but the transcript is what the comparison is drawn
+   * from, and the recogniser skips a step that already has one. Left behind,
+   * it would quietly keep showing what was said the first time round.
+   */
+  const forget = useCallback((i: number) => {
+    const old = takesRef.current[i]
+    if (old) URL.revokeObjectURL(old.url)
+    setTakes((t) => {
+      if (t[i] === undefined) return t
+      const rest = { ...t }
+      delete rest[i]
+      return rest
+    })
+    setHeard((h) => {
+      if (h[i] === undefined) return h
+      const rest = { ...h }
+      delete rest[i]
+      return rest
+    })
+    // A recognition still running for this step belongs to the take just
+    // dropped; without this the spinner would sit there for good.
+    setListening((l) => (l === i ? null : l))
+  }, [])
+
   const goTo = useCallback(
     (i: number) => {
       setRevealed(false)
@@ -127,10 +159,14 @@ export default function RehearsalRun({
         setPhase('done')
         return
       }
+      // Stepping onto a line means doing it again – the previous attempt at it
+      // goes. Coming out of the resolution this is the same index, which is
+      // exactly the "let me say that once more" case.
+      forget(i)
       setIndex(i)
       setPhase(phaseFor(steps[i]))
     },
-    [steps],
+    [steps, forget],
   )
 
   /**

@@ -453,6 +453,10 @@ Im Durchlauf: <kbd>Leertaste</kbd> weiter (beendet die Pause und löst auf),
 Über der aktuellen Zeile stehen die beiden vorherigen – genug, um zu wissen,
 wo man ist.
 
+Ein Schritt zurück auf die eigene Replik heißt „noch einmal": Mitschnitt und
+Auswertung des vorigen Versuchs werden verworfen, sonst zeigte die Auflösung
+weiterhin den ersten Anlauf.
+
 **Die Aufnahme bleibt im Browser.** Sie wird nicht hochgeladen und nicht
 gespeichert; mit dem Schließen des Durchlaufs ist sie weg. Der Browser fragt
 beim ersten Mal nach dem Mikrofon; ohne Erlaubnis läuft die Probe trotzdem,
