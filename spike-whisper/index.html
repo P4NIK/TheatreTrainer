@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>&#127908;</text></svg>">
+<title>Whisper-Spike – Theater-Vorleser</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --fg: #1d1b19; --muted: #6b6560; --line: #e2ddd7;
+    --card: #fff; --accent: #2b5a7a; --ok: #1f6b3a; --warn: #8a5a00; --err: #a32020;
+    --w-ok: #d8efdf; --w-near: #fdf0cc; --w-wrong: #fbdad8; --w-missing: #ece9e4; --w-extra: #e2e8f4;
+    --w-okfg: #14532d; --w-nearfg: #6b4a00; --w-wrongfg: #7f1d1d; --w-missingfg: #6b6560; --w-extrafg: #1e3a5f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17161a; --fg: #ece9e4; --muted: #9b948c; --line: #302d33;
+      --card: #1f1e23; --accent: #7fb3d4; --ok: #6fce93; --warn: #e0b45c; --err: #f0817c;
+      --w-ok: #1c3a29; --w-near: #3d3418; --w-wrong: #3f2020; --w-missing: #2a282e; --w-extra: #1e2b3d;
+      --w-okfg: #a7e6bf; --w-nearfg: #e8cf94; --w-wrongfg: #f3b4b0; --w-missingfg: #9b948c; --w-extrafg: #b3cdea;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px 18px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 18px; }
+  .grid > div { display: flex; justify-content: space-between; gap: 10px;
+                border-bottom: 1px dotted var(--line); padding: 3px 0; font-size: 13px; }
+  .grid span { color: var(--muted); }
+  .grid b { font-weight: 600; text-align: right; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+  .row > div { flex: 1 1 170px; }
+  select, input[type=text], textarea { width: 100%; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
+  textarea { min-height: 60px; resize: vertical; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  output { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button.mini { padding: 2px 9px; font-size: 13px; margin-right: 4px; }
+  button:disabled { opacity: .45; cursor: default; }
+  audio { width: 100%; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.txt { color: var(--muted); }
+  td.acts { white-space: nowrap; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.own { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  .w { padding: 1px 5px; border-radius: 4px; display: inline-block; margin-bottom: 3px; }
+  .w.ok { background: var(--w-ok); color: var(--w-okfg); }
+  .w.near { background: var(--w-near); color: var(--w-nearfg); }
+  .w.wrong { background: var(--w-wrong); color: var(--w-wrongfg); text-decoration: underline wavy; }
+  .w.missing { background: var(--w-missing); color: var(--w-missingfg); text-decoration: line-through; }
+  .w.extra { background: var(--w-extra); color: var(--w-extrafg); font-style: italic; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend .w { font-size: 12px; }
+  #log { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
+  #log .ok { color: var(--ok); } #log .warn { color: var(--warn); } #log .err { color: var(--err); }
+  .hint { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+  .heard { font-size: 15px; padding: 8px 10px; border-radius: 6px; background: var(--bg);
+           border: 1px solid var(--line); margin-bottom: 12px; }
+  code { background: color-mix(in srgb, var(--muted) 14%, transparent); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Whisper im Browser – Spike</h1>
+  <p class="sub">Nicht „erkennt Whisper Deutsch“ – sondern: <b>welches Modell reicht für den
+     Lernmodus?</b> Gemessen wird deshalb mit <code>compare.ts</code> der App, nicht mit
+     Wortfehlerrate.</p>
+
+  <section>
+    <h2>Umgebung</h2>
+    <div class="grid" id="env"></div>
+  </section>
+
+  <section>
+    <h2>Modell</h2>
+    <div class="row">
+      <div style="flex: 2 1 300px;">
+        <label for="model">Modell-ID auf HuggingFace</label>
+        <input type="text" id="model" value="onnx-community/whisper-base" spellcheck="false">
+      </div>
+      <div>
+        <label for="preset">Vorschläge</label>
+        <select id="preset">
+          <option value="">– auswählen –</option>
+          <option value="onnx-community/whisper-tiny">whisper-tiny</option>
+          <option value="onnx-community/whisper-base">whisper-base</option>
+          <option value="onnx-community/whisper-small">whisper-small</option>
+          <option value="onnx-community/whisper-large-v3-turbo">whisper-large-v3-turbo</option>
+          <option value="Xenova/whisper-tiny">Xenova/whisper-tiny (aelter)</option>
+          <option value="Xenova/whisper-base">Xenova/whisper-base (aelter)</option>
+          <option value="Xenova/whisper-small">Xenova/whisper-small (aelter)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="device">Backend</label>
+        <select id="device">
+          <option value="wasm">wasm (CPU)</option>
+          <option value="webgpu">webgpu</option>
+        </select>
+      </div>
+      <div>
+        <label for="dtype">dtype</label>
+        <select id="dtype">
+          <option value="hybrid">hybrid (Encoder fp32, Decoder q4)</option>
+          <option value="q8">q8</option>
+          <option value="q4">q4</option>
+          <option value="fp16">fp16</option>
+          <option value="fp32">fp32</option>
+        </select>
+      </div>
+      <div>
+        <label for="threads">Threads (nur wasm) <output id="threadsOut"></output></label>
+        <input type="range" id="threads" min="1" max="8" step="1" value="4">
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button id="load">Laden</button>
+      </div>
+    </div>
+    <p class="hint" id="loadInfo">Das Modell kommt von huggingface.co und bleibt danach im
+       Browser-Cache. transformers.js und onnxruntime liegen lokal in <code>vendor/</code>.</p>
+    <p class="hint">Ein q8-Encoder verschluckt bei leisem oder gespieltem Sprechen Silben –
+       deshalb ist <i>hybrid</i> die Vorgabe. <button id="clear" class="ghost mini"
+       style="margin-left:6px">Browser-Cache leeren</button>
+       <button id="selftest" class="ghost mini">onnxruntime prüfen</button>
+       <button id="variants" class="ghost mini">Varianten anzeigen</button></p>
+    <div id="variantBox" style="display:none">
+      <div class="grid" id="variantList"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Repliken</h2>
+    <p class="hint" style="margin-top:0">Sieben Repliken, mit Piper gesprochen – sauber, laut,
+       ohne Raum. Das ist eine <b>Obergrenze</b>, kein Probenalltag. Mit ● sprichst du eine
+       Replik selbst ein; erst diese Zahlen zählen wirklich. Aufnahmen überleben das
+       Neuladen. <button id="forget" class="ghost mini">Aufnahmen verwerfen</button></p>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Replik</th><th class="num">Wörter</th><th>Quelle</th><th></th>
+        </tr></thead>
+        <tbody id="samples"></tbody>
+      </table>
+    </div>
+    <audio id="player" controls></audio>
+  </section>
+
+  <section>
+    <h2>Einzeltest</h2>
+    <div class="row">
+      <div style="flex: 2 1 320px;">
+        <label for="pick">Replik</label>
+        <select id="pick"></select>
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button id="run">Erkennen</button>
+      </div>
+      <div class="hint" style="margin:0; align-self:center; flex: 1 1 200px">Modell: <b id="statusRun">kein Modell geladen</b></div>
+    </div>
+    <label for="expected">Erwarteter Text (das Buch)</label>
+    <textarea id="expected"></textarea>
+
+    <div id="single" style="display:none; margin-top:14px;">
+      <label>Verstanden</label>
+      <div class="heard" id="heard"></div>
+      <label>Wort für Wort</label>
+      <div id="comparison"></div>
+      <div class="legend">
+        <span class="w ok">sitzt</span> <span class="w near">fast</span>
+        <span class="w wrong">anders gesagt</span> <span class="w missing">nicht gehört</span>
+        <span class="w extra">zusätzlich</span>
+      </div>
+      <div class="grid" id="singleStats" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Durchlauf</h2>
+    <p class="hint" style="margin-top:0">Alle Repliken nacheinander, nach einem Aufwärmlauf.
+       Zum Vergleich: das Backend braucht heute „ein paar Sekunden je Replik“ auf der CPU.</p>
+    <div class="row" style="margin-top:12px">
+      <div style="flex: 0 0 auto;"><button id="bench" class="ghost">Durchlauf starten</button></div>
+      <div class="hint" style="margin:0; align-self:center">Modell: <b id="statusBench">kein Modell geladen</b> – wird beim Start nachgeladen</div>
+    </div>
+    <div id="summaryBox" style="display:none">
+      <div class="grid" id="summary"></div>
+    </div>
+    <div id="errorBox" style="display:none; margin-top:14px">
+      <label>Fehlerbild über alle Repliken</label>
+      <div class="grid" id="stateCounts"></div>
+      <div class="scroll" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Wort im Buch</th><th class="num">wie oft daneben</th><th>stattdessen verstanden</th></tr></thead>
+          <tbody id="missList"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Buch</th><th>Verstanden</th><th>Quelle</th><th class="num">Treffer</th>
+          <th class="num">wörtlich</th><th class="num">Ton s</th><th class="num">ms</th><th class="num">RTF</th>
+        </tr></thead>
+        <tbody id="results"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Protokoll</h2>
+    <div id="log"></div>
+  </section>
+
+</div>
+<!-- transformers.js importiert onnxruntime unter den nackten Namen
+     "onnxruntime-common" und "onnxruntime-web/webgpu". Beide zeigen hier auf
+     dieselbe Datei: so gibt es nur eine Tensor-Klasse im Speicher, und die
+     ist genau die, mit der onnxruntime selbst rechnet. -->
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-common": "./vendor/ort.webgpu.min.mjs",
+    "onnxruntime-web/webgpu": "./vendor/ort.webgpu.min.mjs"
+  }
+}
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

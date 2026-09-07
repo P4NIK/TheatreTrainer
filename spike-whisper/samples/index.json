@@ -1,0 +1,46 @@
+{
+  "samples": [
+    {
+      "file": "01_ja.wav",
+      "text": "Ja.",
+      "seconds": 0.48,
+      "words": 1
+    },
+    {
+      "file": "02_was.wav",
+      "text": "Was soll das heißen?",
+      "seconds": 1.14,
+      "words": 4
+    },
+    {
+      "file": "03_abend.wav",
+      "text": "Guten Abend, Frau Nachbarin. Sie sehen bezaubernd aus heute.",
+      "seconds": 3.75,
+      "words": 9
+    },
+    {
+      "file": "04_gesagt.wav",
+      "text": "Ich habe Ihnen doch gesagt, dass ich damit nichts zu tun haben will!",
+      "seconds": 3.47,
+      "words": 13
+    },
+    {
+      "file": "05_namen.wav",
+      "text": "Bring mir den neunundzwanziger Romanée Conti, Jean-Baptiste.",
+      "seconds": 3.54,
+      "words": 7
+    },
+    {
+      "file": "06_niemals.wav",
+      "text": "Nein! Niemals! Eher gehe ich zugrunde, als dass ich diesem Menschen noch einmal unter die Augen trete.",
+      "seconds": 5.46,
+      "words": 17
+    },
+    {
+      "file": "07_herbst.wav",
+      "text": "Es war im Herbst, die Blätter fielen schon, und der alte Garten lag so still da, als hätte ihn jemand vergessen.",
+      "seconds": 5.6,
+      "words": 21
+    }
+  ]
+}
