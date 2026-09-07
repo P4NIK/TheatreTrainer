@@ -24,6 +24,7 @@ const (
 	fileProject  = "project.json"
 	fileBlocks   = "blocks.json"
 	fileSpeakers = "speakers.json"
+	fileCards    = "cards.json"
 )
 
 // Store persists projects as plain JSON files on disk. A single mutex is
@@ -130,6 +131,7 @@ type ProjectUpdate struct {
 	Name      *string `json:"name"`
 	MyRole    *string `json:"myRole"`
 	PageCount *int    `json:"pageCount"`
+	Premiere  *string `json:"premiere"`
 }
 
 // Update patches project metadata.
@@ -150,10 +152,87 @@ func (s *Store) Update(id string, u ProjectUpdate) (Project, error) {
 	if u.PageCount != nil {
 		p.PageCount = *u.PageCount
 	}
+	if u.Premiere != nil {
+		p.Premiere = strings.TrimSpace(*u.Premiere)
+	}
 	if err := writeJSON(filepath.Join(s.root, id, fileProject), p); err != nil {
 		return Project{}, err
 	}
 	return p, nil
+}
+
+// Cards loads the flashcard state of a project.
+//
+// A missing file is an empty deck, not an error: projects created before the
+// flashcards existed have none, and neither has one that was never rehearsed
+// this way.
+func (s *Store) Cards(id string) (Cards, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !validID(id) {
+		return nil, ErrNotFound
+	}
+	if _, err := os.Stat(filepath.Join(s.root, id, fileProject)); err != nil {
+		return nil, ErrNotFound
+	}
+
+	cards := Cards{}
+	if err := readJSON(filepath.Join(s.root, id, fileCards), &cards); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Cards{}, nil
+		}
+		return nil, fmt.Errorf("cards.json: %w", err)
+	}
+	return cards, nil
+}
+
+// MergeCards writes the given entries into the deck and returns the result.
+//
+// A merge rather than a replacement, because a rehearsal session grades one
+// line at a time and sending the whole deck back for every single one would
+// make two windows on the same play overwrite each other. A nil entry removes
+// that card, which is how a reset for one line works.
+func (s *Store) MergeCards(id string, patch map[string]*Card) (Cards, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !validID(id) {
+		return nil, ErrNotFound
+	}
+	if _, err := os.Stat(filepath.Join(s.root, id, fileProject)); err != nil {
+		return nil, ErrNotFound
+	}
+
+	cards := Cards{}
+	if err := readJSON(filepath.Join(s.root, id, fileCards), &cards); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("cards.json: %w", err)
+	}
+	for blockID, card := range patch {
+		if card == nil {
+			delete(cards, blockID)
+			continue
+		}
+		cards[blockID] = *card
+	}
+	if err := writeJSON(filepath.Join(s.root, id, fileCards), cards); err != nil {
+		return nil, err
+	}
+	return cards, nil
+}
+
+// ClearCards forgets the whole deck – the learning state, not the lines.
+func (s *Store) ClearCards(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !validID(id) {
+		return ErrNotFound
+	}
+	if _, err := os.Stat(filepath.Join(s.root, id, fileProject)); err != nil {
+		return ErrNotFound
+	}
+	return writeJSON(filepath.Join(s.root, id, fileCards), Cards{})
 }
 
 // SaveProgress records where a rehearsal run currently stands.

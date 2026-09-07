@@ -10,7 +10,33 @@ export interface Project {
   myRole: string
   /** Where the last rehearsal run stopped; absent until one has been run. */
   progress?: Progress | null
+  /** Opening night as "2026-10-31", or "" when unknown. */
+  premiere: string
 }
+
+/** Self-assessment after a flashcard. */
+export type Grade = 'again' | 'hard' | 'good'
+
+/** Learning state of one line – mirrors project.Card on the server. */
+export interface Card {
+  /** Leitner box, 1-based; higher means longer between repeats. */
+  box: number
+  /** The day the line is wanted again, as "2026-09-12". */
+  due: string
+  reviews: number
+  lapses: number
+  /** Run of consecutive "good" gradings. */
+  streak: number
+  lastGrade: Grade | ''
+  lastReviewed: string
+}
+
+/**
+ * Block ID -> learning state. Only graded lines appear: the deck itself is
+ * derived from the blocks of the role, so editing the play needs no
+ * bookkeeping here.
+ */
+export type Deck = Record<string, Card>
 
 /** Which part of the play a run covers. */
 export type SelectionMode = 'all' | 'pages' | 'role' | 'blocks'

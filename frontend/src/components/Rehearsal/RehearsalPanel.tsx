@@ -108,6 +108,20 @@ export default function RehearsalPanel({
   useEffect(() => {
     api.sttInfo().then(setStt).catch(() => setStt(null))
   }, [])
+
+  // The tab unmounts when you switch away, so the position handed down with the
+  // project is the one from page load. Asking once on mount keeps the card
+  // honest – and picks up a run made in another window.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getProject(project.id)
+      .then((p) => !cancelled && setProgress(p.progress ?? null))
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [project.id])
   const roles = useMemo(() => speakerNames(blocks), [blocks])
 
   // The selection knows "my appearances" – for the rehearsal that has to mean

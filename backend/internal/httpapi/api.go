@@ -51,6 +51,9 @@ func (a *API) Router() http.Handler {
 				r.Delete("/", a.deleteProject)
 				r.Put("/progress", a.putProgress)
 				r.Delete("/progress", a.deleteProgress)
+				r.Get("/cards", a.getCards)
+				r.Patch("/cards", a.patchCards)
+				r.Delete("/cards", a.deleteCards)
 				r.Get("/pdf", a.getPDF)
 				r.Get("/blocks", a.getBlocks)
 				r.Put("/blocks", a.putBlocks)
@@ -131,7 +134,7 @@ func decodeJSON(r *http.Request, v any) error {
 func devCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

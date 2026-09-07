@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -73,6 +74,16 @@ func (a *API) updateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// A premiere that cannot be parsed would silently switch the flashcard
+	// ceiling off, and nobody would notice until the intervals got long.
+	if u.Premiere != nil {
+		if d := strings.TrimSpace(*u.Premiere); d != "" {
+			if _, err := time.Parse(project.DateLayout, d); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("Premierentermin bitte als JJJJ-MM-TT angeben"))
+				return
+			}
+		}
+	}
 	p, err := a.store.Update(chi.URLParam(r, "id"), u)
 	if err != nil {
 		storeError(w, err)
@@ -122,6 +133,58 @@ func (a *API) deleteProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
+}
+
+func (a *API) getCards(w http.ResponseWriter, r *http.Request) {
+	cards, err := a.store.Cards(chi.URLParam(r, "id"))
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cards)
+}
+
+// patchCards merges single cards into the deck instead of replacing it.
+//
+// A session grades one line at a time; sending the whole deck back for each of
+// them would make two windows on the same play overwrite one another's work. A
+// null entry deletes that card.
+func (a *API) patchCards(w http.ResponseWriter, r *http.Request) {
+	var patch map[string]*project.Card
+	if err := decodeJSON(r, &patch); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	for id, card := range patch {
+		if card == nil {
+			continue
+		}
+		if card.Box < 1 {
+			writeError(w, http.StatusBadRequest, errors.New("Fach von \""+id+"\" muss mindestens 1 sein"))
+			return
+		}
+		if card.Due != "" {
+			if _, err := time.Parse(project.DateLayout, card.Due); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("Fälligkeit von \""+id+"\" bitte als JJJJ-MM-TT angeben"))
+				return
+			}
+		}
+	}
+	cards, err := a.store.MergeCards(chi.URLParam(r, "id"), patch)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cards)
+}
+
+// deleteCards forgets the learning state, not the lines themselves.
+func (a *API) deleteCards(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.ClearCards(chi.URLParam(r, "id")); err != nil {
+		storeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) getPDF(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,7 @@ import {
 import { notifications } from '@mantine/notifications'
 import {
   IconArrowLeft,
+  IconCards,
   IconDeviceFloppy,
   IconHeadphones,
   IconSchool,
@@ -28,6 +29,7 @@ import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
 import PdfCanvasEditor from '../components/PdfCanvasEditor/PdfCanvasEditor'
+import CardsPanel from '../components/Rehearsal/CardsPanel'
 import RehearsalPanel from '../components/Rehearsal/RehearsalPanel'
 import SpeakerConfig from '../components/SpeakerConfig/SpeakerConfig'
 import SynthesizePanel from '../components/SynthesizePanel/SynthesizePanel'
@@ -194,6 +196,21 @@ export default function EditorPage({ projectId, onBack }: Props) {
     [projectId],
   )
 
+  /** The premiere caps every flashcard interval, so it lives on the project. */
+  const setPremiere = (premiere: string) => {
+    if (!project) return
+    setProject({ ...project, premiere })
+    api
+      .updateProject(projectId, { premiere })
+      .catch((e) =>
+        notifications.show({
+          color: 'red',
+          title: 'Premierentermin konnte nicht gespeichert werden',
+          message: (e as Error).message,
+        }),
+      )
+  }
+
   const setMyRole = (role: string) => {
     if (!project) return
     setProject({ ...project, myRole: role })
@@ -298,6 +315,9 @@ export default function EditorPage({ projectId, onBack }: Props) {
           <Tabs.Tab value="rehearsal" leftSection={<IconSchool size={16} />}>
             Lernmodus
           </Tabs.Tab>
+          <Tabs.Tab value="cards" leftSection={<IconCards size={16} />}>
+            Karteikarten
+          </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="editor">
@@ -362,6 +382,17 @@ export default function EditorPage({ projectId, onBack }: Props) {
             speakers={speakers}
             onCorrectBlock={correctBlock}
             onBeforeStart={save}
+          />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="cards">
+          <CardsPanel
+            project={project}
+            blocks={blocks}
+            speakers={speakers}
+            onCorrectBlock={correctBlock}
+            onBeforeStart={save}
+            onPremiereChange={setPremiere}
           />
         </Tabs.Panel>
       </Tabs>

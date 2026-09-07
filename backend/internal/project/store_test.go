@@ -195,3 +195,107 @@ func TestProgressUnknownProject(t *testing.T) {
 		t.Fatalf("ClearProgress on a missing project: err = %v", err)
 	}
 }
+
+func TestCardsMergeAndClear(t *testing.T) {
+	s := newTestStore(t)
+	p, err := s.Create("Woyzeck", "w.pdf", strings.NewReader("%PDF"))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A project from before the flashcards existed has no cards.json, and that
+	// has to read as an empty deck rather than as an error.
+	deck, err := s.Cards(p.ID)
+	if err != nil {
+		t.Fatalf("Cards on a fresh project: %v", err)
+	}
+	if len(deck) != 0 {
+		t.Fatalf("fresh deck is not empty: %+v", deck)
+	}
+
+	first := Card{Box: 2, Due: "2026-09-10", Reviews: 1, Streak: 1, LastGrade: GradeGood}
+	if _, err := s.MergeCards(p.ID, map[string]*Card{"b1": &first}); err != nil {
+		t.Fatalf("MergeCards: %v", err)
+	}
+
+	// The second merge must leave the first card standing – that is the whole
+	// point of merging instead of replacing.
+	second := Card{Box: 1, Due: "2026-09-06", Reviews: 1, Lapses: 1, LastGrade: GradeAgain}
+	deck, err = s.MergeCards(p.ID, map[string]*Card{"b2": &second})
+	if err != nil {
+		t.Fatalf("MergeCards #2: %v", err)
+	}
+	if len(deck) != 2 || deck["b1"].Box != 2 || deck["b2"].Lapses != 1 {
+		t.Fatalf("deck after two merges: %+v", deck)
+	}
+
+	reloaded, err := s.Cards(p.ID)
+	if err != nil {
+		t.Fatalf("Cards: %v", err)
+	}
+	if reloaded["b1"].LastGrade != GradeGood || reloaded["b2"].Due != "2026-09-06" {
+		t.Fatalf("deck lost something on reload: %+v", reloaded)
+	}
+
+	// A nil entry is how one card is dropped without rewriting the file.
+	deck, err = s.MergeCards(p.ID, map[string]*Card{"b1": nil})
+	if err != nil {
+		t.Fatalf("MergeCards with nil: %v", err)
+	}
+	if _, ok := deck["b1"]; ok {
+		t.Fatalf("nil entry did not delete: %+v", deck)
+	}
+	if _, ok := deck["b2"]; !ok {
+		t.Fatalf("nil entry deleted the wrong card: %+v", deck)
+	}
+
+	if err := s.ClearCards(p.ID); err != nil {
+		t.Fatalf("ClearCards: %v", err)
+	}
+	empty, err := s.Cards(p.ID)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("deck after clearing: %v / %+v", err, empty)
+	}
+}
+
+func TestCardsUnknownProject(t *testing.T) {
+	s := newTestStore(t)
+
+	if _, err := s.Cards("gibt-es-nicht"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Cards: err = %v", err)
+	}
+	if _, err := s.MergeCards("gibt-es-nicht", map[string]*Card{"b": {Box: 1}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("MergeCards: err = %v", err)
+	}
+	if err := s.ClearCards("gibt-es-nicht"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ClearCards: err = %v", err)
+	}
+}
+
+func TestUpdatePremiere(t *testing.T) {
+	s := newTestStore(t)
+	p, err := s.Create("Faust", "f.pdf", strings.NewReader("%PDF"))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if p.Premiere != "" {
+		t.Fatalf("a new project has no premiere: %q", p.Premiere)
+	}
+
+	date := "2026-10-31"
+	got, err := s.Update(p.ID, ProjectUpdate{Premiere: &date})
+	if err != nil || got.Premiere != date {
+		t.Fatalf("Update: %v / %q", err, got.Premiere)
+	}
+	reloaded, err := s.Get(p.ID)
+	if err != nil || reloaded.Premiere != date {
+		t.Fatalf("premiere lost on reload: %v / %q", err, reloaded.Premiere)
+	}
+
+	// Clearing it has to work too – a postponed premiere is no premiere.
+	empty := ""
+	got, err = s.Update(p.ID, ProjectUpdate{Premiere: &empty})
+	if err != nil || got.Premiere != "" {
+		t.Fatalf("clearing the premiere: %v / %q", err, got.Premiere)
+	}
+}

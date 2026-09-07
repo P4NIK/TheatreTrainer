@@ -38,6 +38,9 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   Mitschnitt und Wort-für-Wort-Vergleich per lokaler Spracherkennung
 - Der Lernmodus merkt sich, wo du aufgehört hast, und bietet beim nächsten Mal
   Weitermachen oder Von-vorne an; mit „Ab Seite“ steigst du an jeder Stelle ein
+- **Karteikarten**: Jede Replik deiner Rolle ist eine Karte mit Stichwort. Nach
+  jeder sagst *du*, ob sie saß – was sitzt, kommt seltener, was danebengeht,
+  noch in derselben Sitzung wieder. Die Abstände springen nie über die Premiere
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
@@ -453,7 +456,7 @@ Im Durchlauf: <kbd>Leertaste</kbd> weiter (beendet die Pause und löst auf),
 Über der aktuellen Zeile stehen die beiden vorherigen – genug, um zu wissen,
 wo man ist.
 
-Ein Schritt zurück auf die eigene Replik heißt „noch einmal": Mitschnitt und
+Ein Schritt zurück auf die eigene Replik heißt „noch einmal“: Mitschnitt und
 Auswertung des vorigen Versuchs werden verworfen, sonst zeigte die Auflösung
 weiterhin den ersten Anlauf.
 
@@ -577,13 +580,93 @@ Weil das Audio dabei im Zwischenspeicher landet, kostet das Umschalten zwischen
 zugewiesen, ist die Länge unbekannt; dann gibt es die feste Pause aus
 `THEATER_SKIP_PAUSE_MS`.
 
+## Karteikarten
+
+Der Lernmodus geht das Stück der Reihe nach durch. Die Karteikarten gehen
+danach, was noch nicht sitzt.
+
+Jede Replik deiner Rolle ist eine Karte, und eine Karte läuft wie eine Replik im
+Lernmodus: Du hörst das Stichwort, es wird still, du sprichst, dann kommt die
+Auflösung. Nur endet sie mit drei Knöpfen.
+
+| Knopf | Taste | Was passiert |
+|---|---|---|
+| **Daneben** | <kbd>1</kbd> | zurück ins erste Fach – und drei Karten später noch einmal |
+| **Wackelig** | <kbd>2</kbd> | bleibt im Fach, kommt zehn Karten später noch einmal |
+| **Saß** | <kbd>3</kbd> | ein Fach weiter, für heute erledigt |
+
+**Entscheiden tust du, nicht die Spracherkennung.** Ist „Gesagtes auswerten“
+eingeschaltet, wird einer der drei Knöpfe vorgewählt – mehr nicht. Whisper
+verschluckt Endungen, erfindet Wörter und stolpert über Namen; ein Stapel, der
+sich selbst bewertet, schöbe genau die Repliken nach hinten, an denen sich die
+Erkennung verhört, statt der, an denen du hängst.
+
+### Wann eine Replik wiederkommt
+
+Sechs Leitner-Fächer mit festen Abständen:
+
+| Fach | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| Tage | 0 | 1 | 3 | 7 | 16 | 35 |
+
+Das gilt auch für eine Wiederholung innerhalb derselben Sitzung: Wer eine Replik
+erst im zweiten Anlauf hinbekommt, landet in Fach 2 statt dort, wo er vorher
+stand – die ehrliche Lesart des Abends.
+
+Fällig ist, was heute oder früher dran wäre, dazu alles noch nie Geübte. Die
+Sitzung nimmt die schwächsten Karten zuerst: erst nach Fach, dann nach
+Überfälligkeit, zuletzt nach Stückreihenfolge.
+
+### Die zwei Uhren
+
+Die Fächer sind die langsame Uhr, die Sitzung die schnelle. Eine
+danebengegangene Replik kommt drei Karten später noch einmal, eine wackelige
+zehn – so wird ein langer Abend von selbst zur Wiederholung, ohne dass die
+Tagesabstände etwas davon mitbekommen müssten. Sofort danach wäre nur das Echo
+geprüft; drei Karten weiter muss die Replik wiedergefunden werden.
+
+Eine Karte, die immer wieder danebengeht, kommt immer wieder – dafür ist der
+Modus da. Beendet wird die Sitzung mit „Beenden“, jederzeit.
+
+### Premiere
+
+Steht ein Termin im Feld **Premiere**, geht kein Abstand darüber hinaus: Der
+Vortag ist der späteste Tag, an dem eine Replik wiederkommt. Neun Tage vor der
+Premiere heißt Fach 6 also acht Tage statt fünfunddreißig, und am Premierentag
+ist alles fällig. Ist der Termin vorbei, gelten wieder die vollen Abstände – das
+Stück läuft ja.
+
+### Einrichtung
+
+| Einstellung | Wirkung |
+|---|---|
+| **Deine Rolle** | Aus ihren Repliken besteht der Stapel |
+| **Welcher Teil** | dieselbe Auswahl wie sonst – „heute nur Akt 2“, ohne den Lernstand zu verlieren |
+| **Nur Fälliges / Alles** | ob die ruhenden Karten mitkommen |
+| **Höchstens** | Obergrenze für die Sitzung; leer heißt: alles Fällige |
+| **Stichwort** | wie viele Repliken vor deiner vorgelesen werden; 0 lässt den Einsatz weg |
+| **Regieanweisungen als Stichwort** | aus überspringt sie – der Einsatz ist dann die letzte gesprochene Replik |
+
+Übersprungene Regieanweisungen werden dabei überstiegen, nicht abgezogen: Die
+Suche läuft weiter rückwärts, bis die gewünschte Zahl an Stichworten zusammen
+ist. Der Einsatz wird also nicht kürzer, nur gesprochen.
+
+Dazu dieselben Hilfen wie im Lernmodus: Stichwort mitlesen, eigenen Text
+aufdecken, mitschneiden, auswerten.
+
+Der Balken über der Einrichtung zeigt, wie sich der Stapel auf die Fächer
+verteilt – links, was noch nicht sitzt. „Lernstand zurücksetzen“ leert ihn
+wieder; die Repliken bleiben selbstverständlich stehen.
+
 ## Datenablage
 
 ```
 data/projects/<projekt-id>/
-  project.json    # Name, PDF, Seitenzahl, eigene Rolle, zuletzt geübte Stelle
+  project.json    # Name, PDF, Seitenzahl, eigene Rolle, zuletzt geübte Stelle,
+                  # Premierentermin
   blocks.json     # markierte Blöcke mit relativen Koordinaten und Text
   speakers.json   # Stimme, Tonhöhe, Tempo, Lautstärke und Farbe je Sprecher
+  cards.json      # Karteikarten: Fach, fällig ab, Zähler – je geübter Replik
   source.pdf      # das importierte Stück
   audio/          # erzeugte Hörfassungen
   cache/          # Audio je Block, benannt nach dem Hash seiner Einstellungen
@@ -612,6 +695,7 @@ frontend/
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
                       # AutoDetect, SynthesizePanel, Rehearsal
   src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf,
+                      # Karteikarten (Leitner + Sitzungsqueue),
                       # Wortvergleich (Levenshtein + Kölner Phonetik)
   src/pages/          # Projektliste und Editor
 ```
@@ -623,10 +707,13 @@ frontend/
 | `POST` | `/api/projects` | Projekt anlegen (multipart: `name`, `pdf`) |
 | `GET` | `/api/projects` | Projekte auflisten |
 | `GET` | `/api/projects/{id}` | Projektdetails |
-| `PUT` | `/api/projects/{id}` | Name, eigene Rolle, Seitenzahl ändern |
+| `PUT` | `/api/projects/{id}` | Name, eigene Rolle, Seitenzahl, Premierentermin ändern |
 | `DELETE` | `/api/projects/{id}` | Projekt löschen |
 | `PUT` | `/api/projects/{id}/progress` | zuletzt geübte Stelle merken (Block, Seite, Rolle, Auswahl) |
 | `DELETE` | `/api/projects/{id}/progress` | gemerkte Stelle vergessen |
+| `GET` | `/api/projects/{id}/cards` | Lernstand der Karteikarten |
+| `PATCH` | `/api/projects/{id}/cards` | einzelne Karten einfügen oder ändern (`null` löscht eine) |
+| `DELETE` | `/api/projects/{id}/cards` | Lernstand zurücksetzen |
 | `GET` | `/api/projects/{id}/pdf` | Original-PDF ausliefern |
 | `GET`/`PUT` | `/api/projects/{id}/blocks` | Blöcke laden/ersetzen |
 | `GET` | `/api/projects/{id}/blocks/{blockId}/audio` | einzelnen Block erzeugen/abspielen |

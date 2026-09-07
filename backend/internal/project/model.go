@@ -16,6 +16,10 @@ type Project struct {
 	// not been rehearsed yet, which is what the UI offers "start" for instead
 	// of "carry on".
 	Progress *Progress `json:"progress,omitempty"`
+	// Premiere is the opening night as "2006-01-02", or "" when unknown. The
+	// flashcards treat it as a ceiling: an interval that would jump clean over
+	// the premiere helps nobody.
+	Premiere string `json:"premiere"`
 }
 
 // Rect is a selection rectangle in page-relative coordinates (0..1), so it
@@ -107,3 +111,45 @@ type Progress struct {
 	Done      bool      `json:"done"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// DateLayout is how a day is written where only the day matters – the
+// premiere and a card's due date.
+const DateLayout = "2006-01-02"
+
+// Gradings of a flashcard, as the person speaking judges it. The recogniser
+// only suggests one: Whisper mishears often enough that letting it decide
+// would send the wrong lines to the back of the deck.
+const (
+	GradeAgain = "again" // daneben – back to the first box
+	GradeHard  = "hard"  // wackelig – stays where it is
+	GradeGood  = "good"  // saß – one box further
+)
+
+// Card is the learning state of one line.
+type Card struct {
+	// Box is the Leitner box, 1-based; a higher one means longer between
+	// repeats.
+	Box int `json:"box"`
+	// Due is the day the line is wanted again, as "2006-01-02". Days rather
+	// than timestamps: whether something is due today should not depend on
+	// the hour one happens to rehearse at.
+	Due string `json:"due"`
+	// Reviews counts every grading, Lapses only the ones that fell back, and
+	// Streak the run of "good"s – together they make the deck readable
+	// without replaying its history.
+	Reviews   int    `json:"reviews"`
+	Lapses    int    `json:"lapses"`
+	Streak    int    `json:"streak"`
+	LastGrade string `json:"lastGrade"`
+	// LastReviewed is a full timestamp, unlike Due: it is shown as "3 days
+	// ago", never compared against a day boundary.
+	LastReviewed time.Time `json:"lastReviewed"`
+}
+
+// Cards maps block ID -> learning state.
+//
+// Only lines that have actually been graded appear here. The deck itself is
+// derived from the blocks of the rehearsed role, so adding, splitting or
+// deleting lines needs no bookkeeping in this file; what is left over is
+// ignored on reading.
+type Cards map[string]Card

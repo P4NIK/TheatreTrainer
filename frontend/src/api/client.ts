@@ -6,6 +6,8 @@
 import type {
   Block,
   CacheStatus,
+  Card,
+  Deck,
   Job,
   ProgressInput,
   Project,
@@ -68,7 +70,7 @@ export const api = {
 
   updateProject: (
     id: string,
-    patch: Partial<Pick<Project, 'name' | 'myRole' | 'pageCount'>>,
+    patch: Partial<Pick<Project, 'name' | 'myRole' | 'pageCount' | 'premiere'>>,
   ) => request<Project>(`/projects/${id}`, json(patch)),
 
   deleteProject: (id: string) =>
@@ -87,6 +89,25 @@ export const api = {
   /** "Start over": forget the saved position. */
   clearProgress: (id: string) =>
     request<Project>(`/projects/${id}/progress`, { method: 'DELETE' }),
+
+  getCards: (id: string) => request<Deck>(`/projects/${id}/cards`),
+
+  /**
+   * Merges single cards into the deck – a PATCH, not a PUT, because a session
+   * grades one line at a time and sending the whole deck back for each would
+   * make two windows on the same play overwrite each other. A null entry drops
+   * that card. Answers with the deck as it now stands.
+   */
+  saveCards: (id: string, patch: Record<string, Card | null>) =>
+    request<Deck>(`/projects/${id}/cards`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+
+  /** Forgets the learning state, not the lines. */
+  clearCards: (id: string) =>
+    request<void>(`/projects/${id}/cards`, { method: 'DELETE' }),
 
   /** URL of the original PDF – handed to react-pdf directly. */
   pdfUrl: (id: string) => `${BASE}/projects/${id}/pdf`,

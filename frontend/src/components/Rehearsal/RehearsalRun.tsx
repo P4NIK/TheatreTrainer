@@ -38,11 +38,28 @@ import {
 } from '@tabler/icons-react'
 
 import { ApiError, api } from '../../api/client'
+import { suggestGrade } from '../../lib/cards'
 import { compareSpoken } from '../../lib/compare'
 import { contextBefore, upcomingBlockIDs, type Step } from '../../lib/rehearsal'
+import type { Grade } from '../../types'
 import ComparisonView from './ComparisonView'
 import type { BlockAudio } from './useBlockAudio'
 import { useRecorder, type Take } from './useRecorder'
+
+/** The three buttons of the flashcard judgement, in the order they are shown. */
+const GRADES: { value: Grade; label: string; color: string; key: string }[] = [
+  { value: 'again', label: 'Daneben', color: 'red', key: '1' },
+  { value: 'hard', label: 'Wackelig', color: 'yellow', key: '2' },
+  { value: 'good', label: 'Saß', color: 'green', key: '3' },
+]
+
+/** Wording of the closing screen – a card session counts something else. */
+export interface DoneScreen {
+  title: string
+  summary: string
+  /** Left out, the "once more" button disappears with it. */
+  repeatLabel?: string
+}
 
 export interface RunOptions {
   /** Read along with what the others say. */
@@ -69,6 +86,15 @@ interface Props {
    * with the last step and `done` once the run reaches the end.
    */
   onProgress?: (index: number, done: boolean) => void
+  /**
+   * Turns the resolution of your own lines into a judgement: the run stops and
+   * asks how it went instead of moving on. This is what makes a run a deck of
+   * flashcards. `steps` may grow while the run is going – a card that did not
+   * sit is put back in behind the current position, and the step index is
+   * handed over so the caller knows where "behind" starts.
+   */
+  onGrade?: (blockId: string, grade: Grade, index: number) => void
+  done?: DoneScreen
   /** Fixing the text of a block right where the mistake showed up. */
   onCorrectBlock: (blockId: string, text: string) => void
   onExit: () => void
@@ -87,6 +113,8 @@ export default function RehearsalRun({
   audio,
   startIndex = 0,
   onProgress,
+  onGrade,
+  done,
   onCorrectBlock,
   onExit,
 }: Props) {
@@ -155,19 +183,31 @@ export default function RehearsalRun({
       setEditing(null)
       setSttError(null)
       if (i < 0) return
-      if (i >= steps.length) {
-        setPhase('done')
-        return
-      }
       // Stepping onto a line means doing it again – the previous attempt at it
       // goes. Coming out of the resolution this is the same index, which is
       // exactly the "let me say that once more" case.
       forget(i)
+      // The index moves past the end as well, rather than stopping short of
+      // it: that is what lets a run pick itself up again when the list grows –
+      // see the effect below.
       setIndex(i)
-      setPhase(phaseFor(steps[i]))
+      setPhase(i >= steps.length ? 'done' : phaseFor(steps[i]))
     },
     [steps, forget],
   )
+
+  /**
+   * A run whose list has grown is not over after all.
+   *
+   * The flashcards put a card that did not sit back into the sitting, and when
+   * that card was the last one there was nothing left to put it in front of –
+   * so it lands behind the position the run has just moved to. Without this the
+   * closing screen would swallow it, because the grading and the step onto the
+   * next position happen in the same render, from the list as it was.
+   */
+  useEffect(() => {
+    if (phase === 'done' && index < steps.length) setPhase(phaseFor(steps[index]))
+  }, [phase, index, steps])
 
   /**
    * Ends the pause and keeps the take.
@@ -202,16 +242,34 @@ export default function RehearsalRun({
   }, [phase, index, finishSpeaking, goTo])
 
   /**
-   * With a recording of your own the resolution is not the end of the step.
+   * With a recording of your own the resolution is not the end of the step –
+   * and with grading switched on it never is: a card is not done until it has
+   * been judged.
    *
    * Read through a ref inside the loop, never as a dependency: keeping the
    * take flips this in the render *before* the phase moves on to 'reveal', and
    * a loop that restarts on it would start a second recording of the pause it
    * has just ended.
    */
-  const waitAfterReveal = takes[index] !== undefined
+  const grading = onGrade !== undefined && step?.kind === 'speak'
+  const waitAfterReveal = takes[index] !== undefined || grading
   const waitRef = useRef(false)
   waitRef.current = waitAfterReveal
+
+  /**
+   * The judgement, and on to the next card. Through a ref for the same reason
+   * as the progress report: the callback is rebuilt on every render above.
+   */
+  const gradeRef = useRef(onGrade)
+  gradeRef.current = onGrade
+  const grade = useCallback(
+    (value: Grade) => {
+      const id = steps[index]?.block?.id
+      if (id) gradeRef.current?.(id, value, index)
+      void next()
+    },
+    [steps, index, next],
+  )
 
   // --- the loop ------------------------------------------------------------
   useEffect(() => {
@@ -273,16 +331,19 @@ export default function RehearsalRun({
 
   // The recogniser runs while the resolution plays, so its few seconds are
   // spent on something you are listening to anyway.
+  // Only the id of the block matters here, not the step list: with the
+  // flashcards that list grows while the run is going, and a dependency on it
+  // would cancel a recognition halfway through and start the same one over.
+  const spokenBlockId = steps[index]?.block?.id
   useEffect(() => {
     const take = takes[index]
-    const block = steps[index]?.block
-    if (!options.analyze || !take || !block || heard[index] !== undefined) return
+    if (!options.analyze || !take || !spokenBlockId || heard[index] !== undefined) return
 
     let cancelled = false
     setListening(index)
     setSttError(null)
     api
-      .transcribe(projectId, block.id, take.blob)
+      .transcribe(projectId, spokenBlockId, take.blob)
       .then((t) => !cancelled && setHeard((h) => ({ ...h, [index]: t.text })))
       .catch((e) => {
         if (cancelled) return
@@ -296,7 +357,7 @@ export default function RehearsalRun({
     return () => {
       cancelled = true
     }
-  }, [takes, index, steps, options.analyze, heard, projectId])
+  }, [takes, index, spokenBlockId, options.analyze, heard, projectId])
 
   // Load the next few lines while the current one plays.
   useEffect(() => {
@@ -341,6 +402,20 @@ export default function RehearsalRun({
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      if (grading && phase === 'reveal') {
+        const chosen = GRADES.find((g) => g.key === e.key)
+        if (chosen) {
+          e.preventDefault()
+          grade(chosen.value)
+          return
+        }
+        // The space bar must not walk past the judgement – the card would stay
+        // unjudged and quietly keep its old place in the deck.
+        if (e.code === 'Space' || e.code === 'ArrowRight') {
+          e.preventDefault()
+          return
+        }
+      }
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
         void next()
@@ -357,7 +432,7 @@ export default function RehearsalRun({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [next, back])
+  }, [next, back, grade, grading, phase])
 
   useEffect(() => {
     return () => {
@@ -376,25 +451,32 @@ export default function RehearsalRun({
     return compareSpoken(text, spoken)
   }, [steps, index, heard])
 
+  /** Pre-selects a button, decides nothing – see suggestGrade. */
+  const suggestion = comparison ? suggestGrade(comparison.score) : null
+
   const total = steps.length
   const percent = total === 0 ? 0 : Math.round(((index + (phase === 'done' ? 1 : 0)) / total) * 100)
   const waitingFor = step?.block?.id && audio.loading.has(step.block.id)
 
   if (phase === 'done') {
     const spoken = Object.keys(takes).length
+    const repeat = done === undefined ? 'Noch einmal' : done.repeatLabel
     return (
       <Card withBorder padding="lg" maw={860}>
         <Stack>
-          <Title order={4}>Durchlauf beendet</Title>
+          <Title order={4}>{done?.title ?? 'Durchlauf beendet'}</Title>
           <Text size="sm" c="dimmed">
-            {steps.filter((s) => s.kind === 'speak').length} eigene Repliken,{' '}
-            {steps.filter((s) => s.kind === 'listen').length} gehört
-            {spoken > 0 && ` · ${spoken} aufgenommen`}.
+            {done?.summary ??
+              `${steps.filter((s) => s.kind === 'speak').length} eigene Repliken, ${
+                steps.filter((s) => s.kind === 'listen').length
+              } gehört${spoken > 0 ? ` · ${spoken} aufgenommen` : ''}.`}
           </Text>
           <Group>
-            <Button onClick={() => goTo(0)} leftSection={<IconRepeat size={18} />}>
-              Noch einmal
-            </Button>
+            {repeat !== undefined && (
+              <Button onClick={() => goTo(0)} leftSection={<IconRepeat size={18} />}>
+                {repeat}
+              </Button>
+            )}
             <Button variant="subtle" onClick={exit}>
               Zurück zur Einrichtung
             </Button>
@@ -608,13 +690,35 @@ export default function RehearsalRun({
               </Text>
             )}
 
-            {waitAfterReveal && (
-              <Group>
-                <Button onClick={() => void next()}>Weiter</Button>
+            {grading ? (
+              <Stack gap={6}>
                 <Text size="xs" c="dimmed">
-                  Der Durchlauf wartet, solange du dir die Aufnahme anhörst.
+                  Saß der Text? Der Vergleich oben ist nur ein Hinweis – die Erkennung verhört
+                  sich oft genug, dass sie das nicht entscheiden darf.
                 </Text>
-              </Group>
+                <Group gap="xs">
+                  {GRADES.map((g) => (
+                    <Button
+                      key={g.value}
+                      color={g.color}
+                      variant={suggestion === g.value ? 'filled' : 'light'}
+                      onClick={() => grade(g.value)}
+                      rightSection={<Kbd>{g.key}</Kbd>}
+                    >
+                      {g.label}
+                    </Button>
+                  ))}
+                </Group>
+              </Stack>
+            ) : (
+              waitAfterReveal && (
+                <Group>
+                  <Button onClick={() => void next()}>Weiter</Button>
+                  <Text size="xs" c="dimmed">
+                    Der Durchlauf wartet, solange du dir die Aufnahme anhörst.
+                  </Text>
+                </Group>
+              )
             )}
           </Stack>
         )}
@@ -655,8 +759,16 @@ export default function RehearsalRun({
         </Group>
         <Paper withBorder px="sm" py={4}>
           <Text size="xs" c="dimmed">
-            <Kbd>Leer</Kbd> weiter · <Kbd>R</Kbd> wiederholen · <Kbd>T</Kbd> Text · <Kbd>P</Kbd>{' '}
-            Pause
+            {grading && phase === 'reveal' ? (
+              <>
+                <Kbd>1</Kbd> daneben · <Kbd>2</Kbd> wackelig · <Kbd>3</Kbd> saß
+              </>
+            ) : (
+              <>
+                <Kbd>Leer</Kbd> weiter · <Kbd>R</Kbd> wiederholen · <Kbd>T</Kbd> Text ·{' '}
+                <Kbd>P</Kbd> Pause
+              </>
+            )}
           </Text>
         </Paper>
       </Group>
