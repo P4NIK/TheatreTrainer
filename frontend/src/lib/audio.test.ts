@@ -237,9 +237,18 @@ describe('lässt die Eingabe in Ruhe', () => {
 })
 
 describe('fromFloat32', () => {
-  it('rechnet die Ausgabe von Piper in 16 Bit um', () => {
+  // Nachgerechnet an voice.py: clip(x * 32767, -32767, 32767), dann astype,
+  // das abschneidet. 0,5 wird also 16383 und nicht 16384, und der tiefste
+  // Wert ist -32767 und nicht -32768.
+  it('rechnet wie Piper, nicht wie üblich', () => {
     const got = fromFloat32(Float32Array.from([0, 1, -1, 0.5, -0.5, 2, -2]))
-    expect(Array.from(got)).toEqual([0, 32767, -32768, 16384, -16384, 32767, -32768])
+    expect(Array.from(got)).toEqual([0, 32767, -32767, 16383, -16383, 32767, -32767])
+  })
+
+  it('schneidet ab, statt zu runden', () => {
+    // 0,99999 * 32767 = 32766,67 -> 32766
+    expect(fromFloat32(Float32Array.from([0.99999]))[0]).toBe(32766)
+    expect(fromFloat32(Float32Array.from([-0.99999]))[0]).toBe(-32766)
   })
 })
 

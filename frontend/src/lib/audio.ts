@@ -306,15 +306,29 @@ export function postProcess(
 }
 
 /**
- * Converts what the browser's Piper hands back – floats between -1 and 1 – to
- * the 16-bit samples everything else works in. The asymmetric factors are the
- * conventional ones and match what the Piper command line writes.
+ * Converts what Piper hands back – floats between -1 and 1 – to the 16-bit
+ * samples everything else works in.
+ *
+ * Not the conventional conversion. Piper does exactly this, in voice.py:
+ *
+ *     np.clip(audio * 32767.0, -32767.0, 32767.0).astype(np.int16)
+ *
+ * Three details, all of which matter for the sample-for-sample comparison:
+ * the factor is 32767 for *both* signs, the floor is -32767 and not -32768,
+ * and `astype` truncates towards zero rather than rounding. Doing it the
+ * conventional way instead leaves more than half the samples one or two steps
+ * off – audible to nobody, but it means the comparison no longer proves
+ * anything.
  */
 export function fromFloat32(samples: Float32Array): Int16Array {
   const out = new Int16Array(samples.length)
   for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]))
-    out[i] = s < 0 ? goRound(s * 32768) : goRound(s * 32767)
+    // Math.fround, weil NumPy die Multiplikation in float32 ausführt und nicht
+    // in doppelter Genauigkeit. Ohne das weicht rund jedes fünfzigste Sample um
+    // eins ab: die Produkte liegen dicht an ganzen Zahlen, und dort entscheidet
+    // schon ein ULP darüber, wohin abgeschnitten wird.
+    const scaled = Math.fround(samples[i] * 32767)
+    out[i] = Math.trunc(scaled > 32767 ? 32767 : scaled < -32767 ? -32767 : scaled)
   }
   return out
 }
