@@ -162,12 +162,18 @@ export type ToWorker =
   | { id: number; type: 'synthesize'; voice: string; text: string; lengthScale: number; speakerId: number }
   | { id: number; type: 'release'; voice: string }
 
-/** Worker back to the main thread. */
+/**
+ * Worker back to the main thread.
+ *
+ * Told apart by `type`, including the failure – the same shape sttWorker.ts
+ * uses. A union whose variants do not all carry the same field cannot be
+ * narrowed.
+ */
 export type FromWorker =
-  | { id: number; ok: true; type: 'load' }
-  | { id: number; ok: true; type: 'synthesize'; samples: Int16Array; sampleRate: number; phonemizeMs: number; inferMs: number }
-  | { id: number; ok: true; type: 'release' }
-  | { id: number; ok: false; error: string }
+  | { id: number; type: 'load' }
+  | { id: number; type: 'synthesize'; samples: Int16Array; sampleRate: number; phonemizeMs: number; inferMs: number }
+  | { id: number; type: 'release' }
+  | { id: number; type: 'error'; error: string }
 
 /**
  * Piper on a thread of its own.
@@ -249,10 +255,8 @@ export class PiperPool {
       lengthScale: request.lengthScale,
       speakerId: request.speakerId,
     })
-    if (answer.ok && answer.type === 'synthesize') {
-      return { samples: answer.samples, sampleRate: answer.sampleRate }
-    }
-    throw new Error('Unerwartete Antwort des Sprach-Workers')
+    if (answer.type !== 'synthesize') throw new Error('Unerwartete Antwort des Sprach-Workers')
+    return { samples: answer.samples, sampleRate: answer.sampleRate }
   }
 
   /** Ends the worker. The voices are gone with it; the cache stays. */
@@ -277,8 +281,8 @@ export class PiperPool {
       const waiting = this.pending.get(message.id)
       if (!waiting) return
       this.pending.delete(message.id)
-      if (message.ok) waiting.resolve(message)
-      else waiting.reject(new Error(message.error))
+      if (message.type === 'error') waiting.reject(new Error(message.error))
+      else waiting.resolve(message)
     }
     this.worker.onerror = (event) => {
       const error = new Error(event.message || 'Der Sprach-Worker ist abgestürzt')

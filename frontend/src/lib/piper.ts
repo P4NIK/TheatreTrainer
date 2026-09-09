@@ -17,6 +17,7 @@
  */
 
 import { fromFloat32 } from './audio'
+import { generatedUrl, importGenerated } from './generated'
 
 /** What is needed from the .onnx.json – the rest does not matter here. */
 export interface VoiceConfig {
@@ -99,32 +100,6 @@ async function getPhonemizer(): Promise<PhonemizeModule> {
     return phonemizer
   })()
   return phonemizerLoading
-}
-
-/**
- * Turns a file that ships *next to* the app into something importable.
- *
- * The direct route – `import('/wasm/x.mjs')` – works in the build but not in
- * Vite's dev server, which refuses to serve anything from `public/` as a
- * module because those files never went through its transforms. Fetching the
- * text and importing it as a blob works in both, and it keeps every generated
- * artifact in one folder instead of smuggling one of them into `src/`.
- */
-async function generatedUrl(url: string): Promise<string> {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`${url} konnte nicht geladen werden: ${response.status} ${response.statusText}`)
-  }
-  return URL.createObjectURL(new Blob([await response.text()], { type: 'text/javascript' }))
-}
-
-async function importGenerated(url: string): Promise<Record<string, unknown>> {
-  const blob = await generatedUrl(url)
-  try {
-    return await import(/* @vite-ignore */ blob)
-  } finally {
-    URL.revokeObjectURL(blob)
-  }
 }
 
 interface PhonemeLine {

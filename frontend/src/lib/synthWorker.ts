@@ -27,7 +27,7 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
         if (!voices.has(message.voice)) {
           voices.set(message.voice, await loadVoice(message.model, message.config))
         }
-        reply({ id: message.id, ok: true, type: 'load' })
+        reply({ id: message.id, type: 'load' })
         break
       }
 
@@ -43,7 +43,6 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
         reply(
           {
             id: message.id,
-            ok: true,
             type: 'synthesize',
             samples: out.samples,
             sampleRate: out.sampleRate,
@@ -58,12 +57,16 @@ self.onmessage = async (event: MessageEvent<ToWorker>) => {
       case 'release': {
         await voices.get(message.voice)?.release()
         voices.delete(message.voice)
-        reply({ id: message.id, ok: true, type: 'release' })
+        reply({ id: message.id, type: 'release' })
         break
       }
     }
   } catch (error) {
-    reply({ id: message.id, ok: false, error: error instanceof Error ? error.message : String(error) })
+    reply({
+      id: message.id,
+      type: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 

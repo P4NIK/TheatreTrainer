@@ -187,8 +187,42 @@ Damit ruft das Frontend vom Backend nur noch die Spracherkennung ab. Aus
 `api/client.ts` sind fünfzehn Methoden verschwunden; übrig sind `sttInfo` und
 `transcribe`.
 
-**6. Whisper nachziehen.** Der Lernmodus ist unabhängig vom Rest. Wichtig ist
-nur, dass sein Modell **erst beim Einschalten** geladen wird.
+**6. Whisper nachziehen — erledigt.** `stt.ts` und `sttWorker.ts` fahren
+whisper-base über transformers.js in einem eigenen Worker; `useBlockAudio`
+hat gezeigt, wie die Aufnahme hinkommt, umgerechnet wird sie im Hauptthread
+(16 kHz Mono, ein Worker hat keinen AudioContext). Das Modell lädt **erst,
+wenn „Gesagtes auswerten" eingeschaltet wird**, mit Fortschritt unter dem
+Schalter statt stumm bei der ersten Replik.
+
+Die Stolperstelle war wieder onnxruntime, diesmal in vier Ausführungen:
+`asyncify`, `jspi`, `jsep`, schlicht. Welche es nimmt, entscheidet es nach
+Browser – und die Glue-Datei der einen passt nicht zur `.wasm` der anderen.
+Deshalb nennt `sttWorker.ts` beide Dateien ausdrücklich und pinnt damit ein
+Paar (`asyncify`, das Chrome ohnehin will). Gegengeprüft in Chromium: mit
+genau dieser Paarung öffnet onnxruntime 1.26 eine echte Session.
+
+Dazu kommt ein kleines Vite-Plugin: der Bundler kopiert die 23 MB `.wasm`
+zusätzlich nach `dist/`, wo sie nach dem Pinnen niemand mehr holt. Es wirft sie
+wieder heraus.
+
+**Ungeprüft bleibt die Erkennung selbst** – huggingface.co ist aus der
+Umgebung, in der ich baue, nicht erreichbar. Belegt sind: Audio-Umrechnung,
+Worker, transformers.js im Build *und* im Dev-Server, die WASM-Paarung an einer
+echten Session, und dass der Worker genau die Adresse anfragt, die im Browser
+des Autors offen war (`onnx-community/whisper-base/resolve/main/config.json`).
+Was der erste echte Lauf noch zeigen muss, ist die Erkennung selbst – im Spike
+waren es 77 % Trefferquote und 0,95 s je Replik.
+
+Ein Preis steht in der `package.json`: `@huggingface/transformers` zieht
+`onnxruntime-node` (212 MB) und `sharp` mit, die im Browser beide nie
+vorkommen. Das trifft nur `npm install`, nicht die ausgelieferte Seite – die
+bekommt 1 MB JavaScript und die 22,5 MB WASM. Falls es je stört, wäre der
+Ausweg, die Web-Fassung wie espeak-ng als Datei danebenzulegen; dann fehlen
+allerdings die Typen.
+
+Damit ruft das Frontend **keinen Endpunkt des Backends mehr auf**;
+`api/client.ts` ist gelöscht. Übrig bleibt der eine Sonderfall: die einmalige
+Übernahme alter Stücke in `legacyImport.ts`.
 
 **7. Erster Eindruck.** Stufenweises Laden mit sichtbarem Fortschritt, ein
 eigener espeak-Build nur mit Deutsch, Service Worker fürs Offline-Arbeiten.

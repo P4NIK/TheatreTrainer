@@ -37,10 +37,10 @@ import {
   IconX,
 } from '@tabler/icons-react'
 
-import { ApiError, api } from '../../api/client'
 import { suggestGrade } from '../../lib/cards'
 import { compareSpoken } from '../../lib/compare'
 import { contextBefore, upcomingBlockIDs, type Step } from '../../lib/rehearsal'
+import { stt } from '../../lib/stt'
 import type { Grade } from '../../types'
 import ComparisonView from './ComparisonView'
 import type { BlockAudio } from './useBlockAudio'
@@ -74,7 +74,6 @@ export interface RunOptions {
 }
 
 interface Props {
-  projectId: string
   steps: Step[]
   role: string
   options: RunOptions
@@ -106,7 +105,6 @@ const phaseFor = (step: Step | undefined): Phase =>
   step === undefined ? 'done' : step.kind === 'speak' ? 'speak' : step.kind
 
 export default function RehearsalRun({
-  projectId,
   steps,
   role,
   options,
@@ -342,22 +340,18 @@ export default function RehearsalRun({
     let cancelled = false
     setListening(index)
     setSttError(null)
-    api
-      .transcribe(projectId, spokenBlockId, take.blob)
+    stt
+      .transcribe(take.blob)
       .then((t) => !cancelled && setHeard((h) => ({ ...h, [index]: t.text })))
       .catch((e) => {
         if (cancelled) return
-        setSttError(
-          e instanceof ApiError && e.status === 424
-            ? e.message
-            : `Spracherkennung fehlgeschlagen: ${(e as Error).message}`,
-        )
+        setSttError(`Spracherkennung fehlgeschlagen: ${(e as Error).message}`)
       })
       .finally(() => !cancelled && setListening(null))
     return () => {
       cancelled = true
     }
-  }, [takes, index, spokenBlockId, options.analyze, heard, projectId])
+  }, [takes, index, spokenBlockId, options.analyze, heard])
 
   // Load the next few lines while the current one plays.
   useEffect(() => {

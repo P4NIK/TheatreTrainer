@@ -19,7 +19,6 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconHistory, IconPlayerPlay, IconRepeat } from '@tabler/icons-react'
 
-import { api } from '../../api/client'
 
 import { speakerNames } from '../../lib/blocks'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
@@ -42,11 +41,11 @@ import {
   type ProgressInput,
   type Project,
   type Speakers,
-  type SttInfo,
 } from '../../types'
 import SelectionCard from '../SynthesizePanel/SelectionCard'
 import RehearsalRun, { type RunOptions } from './RehearsalRun'
 import { useBlockAudio } from './useBlockAudio'
+import { sttHint, useStt } from './useStt'
 
 /** Why the run starts where it starts – this drives the line under the field. */
 type StartReason = 'begin' | 'page' | 'page-empty' | 'resume' | 'resume-nearest' | 'resume-lost'
@@ -90,7 +89,7 @@ export default function RehearsalPanel({
     record: false,
     analyze: false,
   })
-  const [stt, setStt] = useState<SttInfo | null>(null)
+  const stt = useStt()
   const [running, setRunning] = useState(false)
   const [preparing, setPreparing] = useState<number | null>(null)
   const [starting, setStarting] = useState(false)
@@ -105,10 +104,6 @@ export default function RehearsalPanel({
   const [runIndex, setRunIndex] = useState(0)
 
   const audio = useBlockAudio(project, blocks, speakers)
-
-  useEffect(() => {
-    api.sttInfo().then(setStt).catch(() => setStt(null))
-  }, [])
 
   // The tab unmounts when you switch away, so the position handed down with the
   // project is the one from page load. Asking once on mount keeps the card
@@ -288,7 +283,6 @@ export default function RehearsalPanel({
   if (running) {
     return (
       <RehearsalRun
-        projectId={project.id}
         steps={steps}
         role={role}
         options={options}
@@ -438,15 +432,18 @@ export default function RehearsalPanel({
           />
           <Switch
             checked={options.analyze}
-            onChange={(e) => set('analyze', e.currentTarget.checked)}
+            onChange={(e) => {
+              const an = e.currentTarget.checked
+              set('analyze', an)
+              // Lieber jetzt laden, mit Fortschritt, als bei der ersten Replik.
+              if (an) stt.load()
+            }}
             label="Gesagtes auswerten"
-            disabled={!options.record || !stt?.available}
+            disabled={!options.record}
             description={
               !options.record
                 ? 'Braucht den Mitschnitt – erst den Schalter darüber einschalten.'
-                : stt?.available
-                  ? `Der Mitschnitt wird lokal in Text verwandelt (${stt.command}, Modell ${stt.model}) und Wort für Wort mit dem Buch verglichen. Das dauert ein paar Sekunden pro Replik und ist eine Gedächtnisstütze, kein Urteil.`
-                  : 'Keine lokale Spracherkennung gefunden – siehe README, Abschnitt Lernmodus.'
+                : sttHint(stt)
             }
           />
         </Stack>

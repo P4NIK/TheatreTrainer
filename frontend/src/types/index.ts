@@ -136,23 +136,6 @@ export interface SelectionItem {
   announce?: string
 }
 
-/** Result of the speech-recognition auto-detection on the server. */
-export interface SttInfo {
-  available: boolean
-  /** The command that worked, e.g. "python -m whisper". */
-  command?: string
-  tried: string[]
-  /** True when WHISPER_BIN or STT_CMD was set, which disables detection. */
-  explicit: boolean
-  model?: string
-  detail?: string
-}
-
-export interface Transcript {
-  text: string
-  engine?: string
-}
-
 export interface CacheStatus {
   files: number
   bytes: number

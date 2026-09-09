@@ -33,6 +33,21 @@ const sources = [
   ['@diffusionstudio/piper-wasm/build', 'piper_phonemize.data'],
 ]
 
+/*
+ * Whisper bringt seine eigene onnxruntime mit – eine neuere als die, die Piper
+ * benutzt, weshalb npm sie unter @huggingface/transformers/node_modules ablegt.
+ * Die beiden dürfen nicht durcheinandergeraten: die Glue-Datei aus dem einen
+ * Paket passt nicht zur .wasm des anderen. Deshalb ein eigener Unterordner.
+ *
+ * Von den vier Ausführungen (asyncify, jspi, jsep, schlicht) wandert genau die
+ * mit, die sttWorker.ts festnagelt – siehe die Begründung dort.
+ */
+const whisperOrt = '@huggingface/transformers/node_modules/onnxruntime-web/dist'
+const whisper = [
+  [whisperOrt, 'ort-wasm-simd-threaded.asyncify.mjs'],
+  [whisperOrt, 'ort-wasm-simd-threaded.asyncify.wasm'],
+]
+
 function fail(message) {
   console.error(`\nfetch-wasm: ${message}\n`)
   process.exit(1)
@@ -44,6 +59,14 @@ for (const [pkg, file] of sources) {
   const from = join(modules, ...pkg.split('/'), file)
   if (!existsSync(from)) fail(`${pkg}/${file} fehlt. Erst "npm install" laufen lassen.`)
   copyFileSync(from, join(out, file))
+}
+
+const whisperOut = join(out, 'whisper')
+mkdirSync(whisperOut, { recursive: true })
+for (const [pkg, file] of whisper) {
+  const from = join(modules, ...pkg.split('/'), file)
+  if (!existsSync(from)) fail(`${pkg}/${file} fehlt. Erst "npm install" laufen lassen.`)
+  copyFileSync(from, join(whisperOut, file))
 }
 
 /*
@@ -61,10 +84,13 @@ writeFileSync(
 
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`
 let total = 0
-const listed = [...sources.map(([, f]) => f), 'piper_phonemize.mjs'].sort()
+const listed = [
+  ...[...sources.map(([, f]) => f), 'piper_phonemize.mjs'].sort(),
+  ...whisper.map(([, f]) => join('whisper', f)).sort(),
+]
 for (const file of listed) {
   const { size } = await import('node:fs').then((fs) => fs.statSync(join(out, file)))
   total += size
-  console.log(`  ${file.padEnd(34)} ${mb(size).padStart(9)}`)
+  console.log(`  ${file.padEnd(42)} ${mb(size).padStart(9)}`)
 }
 console.log(`\npublic/wasm/ bereit – ${mb(total)} gesamt.`)
