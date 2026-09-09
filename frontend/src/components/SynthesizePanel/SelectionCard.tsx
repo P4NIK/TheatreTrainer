@@ -14,6 +14,7 @@ import {
   Text,
 } from '@mantine/core'
 import { IconListCheck } from '@tabler/icons-react'
+import { useMediaQuery } from '@mantine/hooks'
 
 import {
   describeStretch,
@@ -42,6 +43,8 @@ export default function SelectionCard({
   selection,
   total,
 }: Props) {
+  const schmal = useMediaQuery('(max-width: 48em)') ?? false
+
   const [picking, setPicking] = useState(false)
 
   const set = <K extends keyof SelectionSettings>(key: K, value: SelectionSettings[K]) =>
@@ -79,7 +82,11 @@ export default function SelectionCard({
 
   return (
     <Stack gap="sm">
+      {/* Auf schmalen Bildschirmen untereinander – nebeneinander wären die
+          letzten beiden Namen abgeschnitten. */}
       <SegmentedControl
+        fullWidth
+        orientation={schmal ? 'vertical' : 'horizontal'}
         value={settings.mode}
         onChange={(v) => changeMode(v as SelectionMode)}
         data={[

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMediaQuery } from '@mantine/hooks'
 import {
   ActionIcon,
   Alert,
@@ -97,6 +98,14 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const [detectOpen, setDetectOpen] = useState(false)
 
   const pdfUrl = usePdfUrl(projectId, setLoadError)
+
+  /*
+   * Auf dem Telefon ist alles ein Zug: der Editor legt PDF und Blockliste
+   * untereinander statt nebeneinander, die Kopfzeile wird schmal, und die
+   * Reiter zeigen nur ihre Symbole. Fünf Wörter nebeneinander passen auf
+   * 390 Punkte nicht, fünf Symbole schon.
+   */
+  const schmal = useMediaQuery('(max-width: 62em)') ?? false
 
   // One play at a time: the worker of another one would go on holding its
   // 63 MB of voice for nothing.
@@ -304,73 +313,135 @@ export default function EditorPage({ projectId, onBack }: Props) {
 
   return (
     <Box>
-      <Group justify="space-between" mb="sm">
-        <Group gap="xs">
+      <Group justify="space-between" mb="sm" wrap="nowrap" gap="xs">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           <Tooltip label="Zur Projektliste">
             <ActionIcon variant="subtle" onClick={onBack} aria-label="Zurück">
               <IconArrowLeft size={18} />
             </ActionIcon>
           </Tooltip>
-          <Title order={3}>{project.name}</Title>
-          {project.myRole && (
+          <Title order={schmal ? 5 : 3} lineClamp={1}>
+            {project.name}
+          </Title>
+          {project.myRole && !schmal && (
             <Badge variant="light" color="indigo">
               meine Rolle: {project.myRole}
             </Badge>
           )}
         </Group>
-        <Group gap="xs">
-          <Text size="xs" c="dimmed">
-            {saving ? 'speichert …' : dirty ? 'ungespeicherte Änderungen' : 'gespeichert'}
-          </Text>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconWand size={16} />}
-            onClick={() => setDetectOpen(true)}
-          >
-            Automatisch erkennen
-          </Button>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconDeviceFloppy size={16} />}
-            onClick={() => void save()}
-            loading={saving}
-            disabled={!dirty}
-          >
-            Speichern
-          </Button>
+        <Group gap="xs" wrap="nowrap">
+          {!schmal && (
+            <Text size="xs" c="dimmed">
+              {saving ? 'speichert …' : dirty ? 'ungespeicherte Änderungen' : 'gespeichert'}
+            </Text>
+          )}
+          {schmal ? (
+            <>
+              {/* Auf dem Telefon nur die Symbole – die Namen stehen im Tooltip
+                  und die Fläche gewinnt eine halbe Zeile. */}
+              <Tooltip label="Automatisch erkennen">
+                <ActionIcon variant="light" size="lg" onClick={() => setDetectOpen(true)} aria-label="Automatisch erkennen">
+                  <IconWand size={18} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label={dirty ? 'Speichern' : 'Gespeichert'}>
+                <ActionIcon
+                  variant="light"
+                  size="lg"
+                  onClick={() => void save()}
+                  loading={saving}
+                  disabled={!dirty}
+                  aria-label="Speichern"
+                >
+                  <IconDeviceFloppy size={18} />
+                </ActionIcon>
+              </Tooltip>
+            </>
+          ) : (
+            <>
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconWand size={16} />}
+                onClick={() => setDetectOpen(true)}
+              >
+                Automatisch erkennen
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconDeviceFloppy size={16} />}
+                onClick={() => void save()}
+                loading={saving}
+                disabled={!dirty}
+              >
+                Speichern
+              </Button>
+            </>
+          )}
         </Group>
       </Group>
 
       <Tabs defaultValue="editor" keepMounted={false}>
-        <Tabs.List mb="md">
-          <Tabs.Tab value="editor" leftSection={<IconSquareRoundedLetterA size={16} />}>
-            Editor
+        <Tabs.List mb="md" grow={schmal}>
+          <Tabs.Tab
+            value="editor"
+            leftSection={<IconSquareRoundedLetterA size={18} />}
+            aria-label="Editor"
+            title="Editor"
+          >
+            {schmal ? null : 'Editor'}
           </Tabs.Tab>
-          <Tabs.Tab value="speakers" leftSection={<IconUsers size={16} />}>
-            Sprecher
+          <Tabs.Tab
+            value="speakers"
+            leftSection={<IconUsers size={18} />}
+            aria-label="Sprecher"
+            title="Sprecher"
+          >
+            {schmal ? null : 'Sprecher'}
           </Tabs.Tab>
-          <Tabs.Tab value="audio" leftSection={<IconHeadphones size={16} />}>
-            Hörfassung
+          <Tabs.Tab
+            value="audio"
+            leftSection={<IconHeadphones size={18} />}
+            aria-label="Hörfassung"
+            title="Hörfassung"
+          >
+            {schmal ? null : 'Hörfassung'}
           </Tabs.Tab>
-          <Tabs.Tab value="rehearsal" leftSection={<IconSchool size={16} />}>
-            Lernmodus
+          <Tabs.Tab
+            value="rehearsal"
+            leftSection={<IconSchool size={18} />}
+            aria-label="Lernmodus"
+            title="Lernmodus"
+          >
+            {schmal ? null : 'Lernmodus'}
           </Tabs.Tab>
-          <Tabs.Tab value="cards" leftSection={<IconCards size={16} />}>
-            Karteikarten
+          <Tabs.Tab
+            value="cards"
+            leftSection={<IconCards size={18} />}
+            aria-label="Karteikarten"
+            title="Karteikarten"
+          >
+            {schmal ? null : 'Karteikarten'}
           </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="editor">
+          {/*
+            Nebeneinander, solange Platz ist; darunter untereinander. Auf dem
+            Telefon bekommt das PDF eine feste Höhe statt der ganzen
+            Fensterhöhe – sonst stünde die Blockliste immer unterhalb des
+            sichtbaren Bereichs und niemand fände sie.
+          */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) 340px',
+              gridTemplateColumns: schmal ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 340px',
               gap: 16,
-              height: 'calc(100vh - 210px)',
+              height: schmal ? undefined : 'calc(100vh - 210px)',
             }}
           >
+            <div style={{ height: schmal ? '65vh' : '100%', minHeight: 0, minWidth: 0 }}>
             <PdfCanvasEditor
               fileUrl={pdfUrl}
               blocks={blocks}
@@ -382,6 +453,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
               onSelect={setSelectedId}
               onRectDrawn={onRectDrawn}
             />
+            </div>
             <BlockList
               projectId={projectId}
               blocks={blocks}

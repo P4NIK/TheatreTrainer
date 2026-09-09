@@ -184,7 +184,16 @@ export const stt = new SttEngine()
 export async function toMono16k(data: Blob | ArrayBuffer): Promise<Float32Array> {
   const buffer = data instanceof Blob ? await data.arrayBuffer() : data
 
-  const context = new AudioContext({ sampleRate: 16000 })
+  // Safari nimmt die Wunsch-Abtastrate erst seit einiger Zeit an; wo es sie
+  // nicht tut, entsteht der Kontext eben mit seiner eigenen, und der
+  // OfflineAudioContext unten rechnet um.
+  let context: AudioContext
+  try {
+    context = new AudioContext({ sampleRate: 16000 })
+  } catch {
+    context = new AudioContext()
+  }
+
   let decoded: AudioBuffer
   try {
     decoded = await context.decodeAudioData(buffer.slice(0))

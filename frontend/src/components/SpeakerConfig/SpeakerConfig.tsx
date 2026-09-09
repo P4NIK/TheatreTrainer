@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMediaQuery } from '@mantine/hooks'
 import {
   ActionIcon,
   Alert,
   Badge,
+  Card,
   ColorInput,
   Group,
   Progress,
@@ -51,6 +53,13 @@ export default function SpeakerConfig({
 
   const engine = engineFor(projectId)
 
+  /*
+   * Acht Spalten passen auf ein Telefon nicht. Statt sie waagerecht scrollen
+   * zu lassen – wo die Regler dann außerhalb des Bildschirms liegen –
+   * bekommt jede Rolle eine Karte.
+   */
+  const schmal = useMediaQuery('(max-width: 62em)') ?? false
+
   // Which voices are already in the browser – so the first preview does not
   // surprise anyone with a 63 MB download.
   useEffect(() => {
@@ -80,6 +89,17 @@ export default function SpeakerConfig({
   }, [names, speakers])
 
   const voiceOptions = VOICES.map((voice) => ({ value: voice.name, label: voice.label }))
+
+  /** Was für eine Rolle eingestellt ist – oder was sie mitbekommt, wenn nichts. */
+  const configOf = (key: string, isDirection: boolean): Speakers[string] =>
+    speakers[key] ?? {
+      model: '',
+      speakerId: 0,
+      lengthScale: isDirection ? 1.15 : 1,
+      volume: isDirection ? 0.7 : 1,
+      pitch: 1,
+      color: isDirection ? '#868e96' : '#4A90D9',
+    }
 
   const update = (key: string, patch: Partial<Speakers[string]>) => {
     const current = speakers[key] ?? {
@@ -146,15 +166,110 @@ export default function SpeakerConfig({
     }
   }
 
+  const renderCard = (key: string, label: string, isDirection: boolean) => {
+    const cfg = configOf(key, isDirection)
+    const known = VOICES.some((voice) => voice.name === cfg.model)
+
+    return (
+      <Card key={key} withBorder padding="sm">
+        <Stack gap="xs">
+          <Group justify="space-between" wrap="nowrap">
+            <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+              <div
+                style={{ width: 10, height: 10, borderRadius: 5, background: cfg.color, flexShrink: 0 }}
+              />
+              <Text size="sm" fw={600} fs={isDirection ? 'italic' : undefined} lineClamp={1}>
+                {label}
+              </Text>
+              {!isDirection && myRole === key && (
+                <Badge size="xs" color="indigo" variant="light">
+                  meine Rolle
+                </Badge>
+              )}
+            </Group>
+            <Group gap={4} wrap="nowrap">
+              {!isDirection && (
+                <Tooltip label="Das ist meine Rolle">
+                  <Radio
+                    checked={myRole === key}
+                    onChange={() => onMyRoleChange(myRole === key ? '' : key)}
+                    onClick={() => myRole === key && onMyRoleChange('')}
+                    aria-label={`${label} ist meine Rolle`}
+                  />
+                </Tooltip>
+              )}
+              <ActionIcon
+                variant="light"
+                size="lg"
+                onClick={() => preview(key)}
+                loading={previewing === key}
+                disabled={!cfg.model || previewing !== null}
+                aria-label="Hörprobe abspielen"
+              >
+                <IconPlayerPlay size={18} />
+              </ActionIcon>
+            </Group>
+          </Group>
+
+          <Select
+            size="sm"
+            placeholder="Stimme wählen"
+            data={voiceOptions}
+            value={known ? cfg.model : null}
+            onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
+            clearable
+          />
+          {cfg.model !== '' && !known && (
+            <Text size="xs" c="red">
+              „{cfg.model}“ gibt es nicht mehr – bitte neu wählen.
+            </Text>
+          )}
+
+          {(
+            [
+              ['Tempo', 'lengthScale', 0.6, 1.8, 0.05, (v: number) => `${v.toFixed(2)}× langsamer`],
+              ['Tonhöhe', 'pitch', 0.75, 1.3, 0.02,
+                (v: number) => (v === 1 ? 'unverändert' : `${v > 1 ? 'höher' : 'tiefer'} ×${v.toFixed(2)}`)],
+              ['Lautstärke', 'volume', 0.2, 1.5, 0.05, (v: number) => `${Math.round(v * 100)} %`],
+            ] as const
+          ).map(([titel, feld, min, max, step, beschriften]) => (
+            <div key={feld}>
+              <Group justify="space-between" gap="xs">
+                <Text size="xs" c="dimmed">
+                  {titel}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {beschriften(cfg[feld] || 1)}
+                </Text>
+              </Group>
+              <Slider
+                size="md"
+                min={min}
+                max={max}
+                step={step}
+                value={cfg[feld] || 1}
+                onChange={(v) => update(key, { [feld]: v })}
+                label={beschriften}
+                marks={feld === 'pitch' ? [{ value: 1 }] : undefined}
+              />
+            </div>
+          ))}
+
+          <ColorInput
+            size="xs"
+            label="Farbe"
+            format="hex"
+            value={cfg.color}
+            onChange={(v) => update(key, { color: v })}
+            withEyeDropper={false}
+          />
+        </Stack>
+      </Card>
+    )
+  }
+
   const renderRow = (key: string, label: string, isDirection: boolean) => {
-    const cfg = speakers[key] ?? {
-      model: '',
-      speakerId: 0,
-      lengthScale: isDirection ? 1.15 : 1,
-      volume: isDirection ? 0.7 : 1,
-      pitch: 1,
-      color: isDirection ? '#868e96' : '#4A90D9',
-    }
+    const cfg = configOf(key, isDirection)
     const known = VOICES.some((voice) => voice.name === cfg.model)
 
     return (
@@ -304,6 +419,12 @@ export default function SpeakerConfig({
         </Stack>
       )}
 
+      {schmal ? (
+        <Stack gap="sm">
+          {rows.map((name) => renderCard(name, name, false))}
+          {renderCard(DIRECTION_KEY, 'Regieanweisungen', true)}
+        </Stack>
+      ) : (
       <Table.ScrollContainer minWidth={1050}>
         <Table verticalSpacing="xs" highlightOnHover>
           <Table.Thead>
@@ -324,6 +445,7 @@ export default function SpeakerConfig({
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      )}
 
       {rows.length === 0 && (
         <Text size="sm" c="dimmed">

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page } from 'react-pdf'
+import { useMediaQuery } from '@mantine/hooks'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   ActionIcon,
   Alert,
   Badge,
+  Button,
   Group,
   Loader,
   NumberInput,
@@ -16,6 +18,7 @@ import {
 import {
   IconChevronLeft,
   IconChevronRight,
+  IconPencil,
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react'
@@ -55,14 +58,45 @@ export default function PdfCanvasEditor({
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [width, setWidth] = useState(800)
+  /** Solange niemand gezoomt hat, folgt die Breite dem Fenster. */
+  const [selbstGezoomt, setSelbstGezoomt] = useState(false)
+  /**
+   * Auf einem Touchgerät kann dieselbe Geste nicht beides sein: schieben und
+   * ein Rechteck ziehen. Deshalb ein Schalter – aus heißt schieben und zoomen
+   * wie in jeder anderen App, an heißt markieren.
+   */
+  const [markieren, setMarkieren] = useState(false)
   const [pieces, setPieces] = useState<TextPiece[]>([])
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<Rect | null>(null)
 
   const overlayRef = useRef<HTMLDivElement>(null)
+  const rahmenRef = useRef<HTMLDivElement>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
 
+  /** Grober Zeiger heißt Finger: kein Hover, keine zwei Maustasten. */
+  const finger = useMediaQuery('(pointer: coarse)') ?? false
+
   const file = useMemo(() => fileUrl, [fileUrl])
+
+  /*
+   * Die Seite füllt die Spalte, solange niemand von Hand gezoomt hat. Eine
+   * feste Vorgabe von 800 Punkten hieße auf dem Telefon: die Hälfte der Seite
+   * liegt außerhalb des Bildschirms, und zwar bevor man irgendetwas getan hat.
+   */
+  useEffect(() => {
+    const rahmen = rahmenRef.current
+    if (!rahmen || selbstGezoomt) return
+
+    const messen = () => {
+      const platz = rahmen.clientWidth - 32
+      if (platz > 100) setWidth(Math.min(2000, Math.round(platz)))
+    }
+    messen()
+    const beobachter = new ResizeObserver(messen)
+    beobachter.observe(rahmen)
+    return () => beobachter.disconnect()
+  }, [selbstGezoomt])
 
   const onDocumentLoad = useCallback(
     (doc: PDFDocumentProxy) => {
@@ -93,7 +127,7 @@ export default function PdfCanvasEditor({
     }
   }, [pdfDoc, page])
 
-  const relative = (e: React.MouseEvent): { x: number; y: number } | null => {
+  const relative = (e: React.PointerEvent): { x: number; y: number } | null => {
     const el = overlayRef.current
     if (!el) return null
     const box = el.getBoundingClientRect()
@@ -104,16 +138,25 @@ export default function PdfCanvasEditor({
     }
   }
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
+    // Mit dem Finger nur im Markier-Modus; sonst gehört die Geste dem Browser.
+    if (e.pointerType !== 'mouse' && !markieren) return
+
     const p = relative(e)
     if (!p) return
+    // Der Zeiger gehört ab jetzt uns, auch wenn der Finger den Rahmen verlässt.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // Ohne Capture geht es auch, nur weniger genau am Rand.
+    }
     startRef.current = p
     setDraft({ x: p.x, y: p.y, w: 0, h: 0 })
     onSelect(null)
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     const start = startRef.current
     if (!start) return
     const p = relative(e)
@@ -131,6 +174,9 @@ export default function PdfCanvasEditor({
     startRef.current = null
     setDraft(null)
     if (!rect || rect.w < MIN_W || rect.h < MIN_H) return
+    // Nach einem gezogenen Rechteck zurück ins Schieben: der Dialog geht auf,
+    // und danach will man die Seite bewegen, nicht sofort das nächste ziehen.
+    if (finger) setMarkieren(false)
     onRectDrawn(rect, textInRect(pieces, rect))
   }
 
@@ -174,16 +220,40 @@ export default function PdfCanvasEditor({
         </Group>
 
         <Group gap={4}>
-          <Badge variant="light" color="gray">
+          <Badge variant="light" color="gray" visibleFrom="sm">
             {pageBlocks.length === 1 ? '1 Block' : `${pageBlocks.length} Blöcke`} auf dieser Seite
           </Badge>
+          {finger && (
+            <Button
+              size="compact-sm"
+              variant={markieren ? 'filled' : 'default'}
+              leftSection={<IconPencil size={16} />}
+              onClick={() => setMarkieren((an) => !an)}
+            >
+              {markieren ? 'Ziehen' : 'Markieren'}
+            </Button>
+          )}
           <Tooltip label="Verkleinern">
-            <ActionIcon variant="default" onClick={() => setWidth((w) => Math.max(400, w - 100))}>
+            <ActionIcon
+              variant="default"
+              onClick={() => {
+                setSelbstGezoomt(true)
+                setWidth((w) => Math.max(200, w - 100))
+              }}
+              aria-label="Verkleinern"
+            >
               <IconZoomOut size={16} />
             </ActionIcon>
           </Tooltip>
           <Tooltip label="Vergrößern">
-            <ActionIcon variant="default" onClick={() => setWidth((w) => Math.min(2000, w + 100))}>
+            <ActionIcon
+              variant="default"
+              onClick={() => {
+                setSelbstGezoomt(true)
+                setWidth((w) => Math.min(2000, w + 100))
+              }}
+              aria-label="Vergrößern"
+            >
               <IconZoomIn size={16} />
             </ActionIcon>
           </Tooltip>
@@ -192,7 +262,12 @@ export default function PdfCanvasEditor({
 
       {error && <Alert color="red">{error}</Alert>}
 
-      <Paper withBorder p="md" style={{ overflow: 'auto', flex: 1, background: '#f1f3f5' }}>
+      <Paper
+        ref={rahmenRef}
+        withBorder
+        p="md"
+        style={{ overflow: 'auto', flex: 1, background: '#f1f3f5' }}
+      >
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <div
             className="pdf-stage"
@@ -219,14 +294,18 @@ export default function PdfCanvasEditor({
             {/* Selection overlay: draws new rectangles and shows existing ones */}
             <div
               ref={overlayRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={finishDraw}
-              onMouseLeave={() => startRef.current && finishDraw()}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={finishDraw}
+              onPointerCancel={finishDraw}
+              onPointerLeave={() => startRef.current && finishDraw()}
               style={{
                 position: 'absolute',
                 inset: 0,
                 cursor: 'crosshair',
+                // Im Markier-Modus gehört die Geste uns, sonst dem Browser:
+                // ohne das scrollt das Telefon die Seite weg, statt zu zeichnen.
+                touchAction: markieren ? 'none' : 'auto',
               }}
             >
               {pageBlocks.map((b) => {
@@ -248,7 +327,7 @@ export default function PdfCanvasEditor({
                     }}
                   >
                     <span
-                      onMouseDown={(e) => {
+                      onPointerDown={(e) => {
                         e.stopPropagation()
                         onSelect(b.id)
                       }}
@@ -299,8 +378,11 @@ export default function PdfCanvasEditor({
       </Paper>
 
       <Text size="xs" c="dimmed">
-        Ziehe mit der Maus ein Rechteck um eine Textzeile – der Text wird automatisch aus dem PDF
-        übernommen und kann anschließend korrigiert werden.
+        {finger
+          ? markieren
+            ? 'Zieh mit dem Finger ein Rechteck um eine Textzeile. Danach geht es wieder ans Schieben.'
+            : 'Schieben und zoomen wie gewohnt. Zum Anlegen eines Blocks oben auf „Markieren“ tippen.'
+          : 'Ziehe mit der Maus ein Rechteck um eine Textzeile – der Text wird automatisch aus dem PDF übernommen und kann anschließend korrigiert werden.'}
       </Text>
     </Stack>
   )

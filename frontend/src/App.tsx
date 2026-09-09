@@ -48,8 +48,8 @@ export default function App() {
               Theater-Vorleser
             </Anchor>
           </Group>
-          <Text size="xs" c="dimmed">
-            lokal · offline · Piper TTS
+          <Text size="xs" c="dimmed" visibleFrom="sm">
+            im Browser · offline · ohne Server
           </Text>
         </Group>
       </AppShell.Header>
