@@ -17,7 +17,7 @@
  */
 
 import { fromFloat32 } from './audio'
-import { generatedUrl, importGenerated } from './generated'
+import { generatedUrl, importGenerated, WASM_BASE } from './generated'
 
 /** What is needed from the .onnx.json – the rest does not matter here. */
 export interface VoiceConfig {
@@ -58,7 +58,7 @@ export interface Synthesis {
  */
 const SENTENCE_SILENCE = 0.2
 
-let wasmBase = '/wasm/'
+let wasmBase = WASM_BASE
 
 /** Where the WASM files live. Must be set before the first load. */
 export function configure(options: { wasmBase?: string }): void {

@@ -17,6 +17,7 @@
  */
 
 import { encodeWav, postProcess } from './audio'
+import { WASM_BASE } from './generated'
 import {
   cacheKey,
   normalizeText,
@@ -233,7 +234,7 @@ export class PiperPool {
           : (bytes.slice().buffer as ArrayBuffer)
 
       await this.send(
-        { id: 0, type: 'load', voice, wasmBase: this.options.wasmBase ?? '/wasm/', model: whole, config },
+        { id: 0, type: 'load', voice, wasmBase: this.options.wasmBase ?? WASM_BASE, model: whole, config },
         [whole],
       )
     })()

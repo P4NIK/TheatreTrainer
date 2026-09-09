@@ -1,16 +1,47 @@
 # Theater-Vorleser
 
-Eine lokale Web-App zum Proben von Theaterstücken: PDF importieren,
-Sprecher-Blöcke per Rechteck markieren, jeder Rolle eine Piper-Stimme zuweisen
-und daraus eine durchgehende Hörfassung erzeugen – wahlweise mit der eigenen
-Rolle als Sprechpause.
+Eine Web-App zum Proben von Theaterstücken: PDF importieren, Sprecher-Blöcke
+per Rechteck markieren, jeder Rolle eine Stimme zuweisen und daraus eine
+durchgehende Hörfassung erzeugen – wahlweise mit der eigenen Rolle als
+Sprechpause.
 
-Alles läuft offline auf dem eigenen Rechner. Es werden keine Daten ins Netz
-geschickt, es gibt keine Datenbank und keinen Account.
+**Alles läuft im Browser.** Kein Server, kein Account, keine Installation.
+Sprachsynthese und Spracherkennung rechnen auf deinem Rechner, deine Stücke
+liegen in deinem Browser, und es wird nichts hochgeladen.
 
 ```
-PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/WAV zum Üben
+PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  WAV zum Üben
 ```
+
+## Loslegen
+
+Als Benutzer: die Seite aufrufen, „Neues Projekt“, PDF hochladen. Beim ersten
+Vorlesen lädt der Browser einmal die Stimme (63 MB) und behält sie – danach
+geht es auch ohne Netz.
+
+Selbst hosten oder entwickeln:
+
+```bash
+cd frontend
+npm install          # holt dabei auch die WASM-Dateien nach public/wasm/
+npm run dev          # http://localhost:5173
+npm run build        # fertige Seite in frontend/dist/
+npm run preview      # dist/ ausliefern, so wie ein Hoster es täte
+```
+
+`dist/` ist eine statische Seite: hochladen reicht, egal wohin – GitHub Pages,
+ein beliebiger Webspace, ein USB-Stick mit lokalem Server. Liegt sie nicht
+unter der Wurzel einer Domain, sondern in einem Unterordner (auf GitHub Pages
+der Normalfall), muss der Build das wissen:
+
+```bash
+npm run build -- --base=/name-des-repos/
+```
+
+Zwei Dinge braucht der Hoster: **HTTPS** (sonst gibt es kein Mikrofon und
+keinen Service Worker) und die üblichen MIME-Typen für `.wasm` und
+`.webmanifest`. Cross-Origin-Isolation (COOP/COEP) ist *nicht* nötig – die
+Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 ## Funktionen
 
@@ -25,9 +56,8 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   Blöcke auftrennen
 - Vorlese-Reihenfolge per Drag & Drop änderbar – wichtig bei mehrspaltigem
   Layout
-- Pro Sprecher: Stimm-Modell, Sprecher-ID (bei Multi-Speaker-Modellen),
-  Tonhöhe, Tempo, Lautstärke, Farbe, Hörprobe – über die Tonhöhe lassen sich
-  mehrere Rollen aus einer einzigen guten Stimme besetzen
+- Pro Sprecher: Tonhöhe, Tempo, Lautstärke, Farbe, Hörprobe – über die Tonhöhe
+  lassen sich mehrere Rollen aus einer einzigen guten Stimme besetzen
 - Eigene Rolle markieren und beim Erzeugen durch eine Pause **in Originallänge**
   ersetzen – der Einsatz kommt dadurch zeitlich richtig
 - Nur einen Ausschnitt erzeugen: ein Seitenbereich (z. B. Akt 1), alle Stellen,
@@ -35,7 +65,7 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
   eine von Hand angehakte Auswahl einzelner Blöcke
 - **Lernmodus**: interaktiv proben – alles wird vorgelesen, bei der eigenen
   Rolle hält der Durchlauf an, danach kommt die Auflösung. Optional mit
-  Mitschnitt und Wort-für-Wort-Vergleich per lokaler Spracherkennung
+  Mitschnitt und Wort-für-Wort-Vergleich per Spracherkennung im Browser
 - Der Lernmodus merkt sich, wo du aufgehört hast, und bietet beim nächsten Mal
   Weitermachen oder Von-vorne an; mit „Ab Seite“ steigst du an jeder Stelle ein
 - **Karteikarten**: Jede Replik deiner Rolle ist eine Karte mit Stichwort. Nach
@@ -44,181 +74,10 @@ PDF  ──▶  Blöcke markieren  ──▶  Stimmen zuweisen  ──▶  MP3/W
 - Jeder Block wird einzeln zwischengespeichert: Nach einer Textänderung wird
   nur dieser eine Block neu erzeugt, und einzelne Repliken lassen sich direkt
   in der Blockliste anhören
-- Ausgabe als MP3 (wenn ffmpeg vorhanden) oder WAV
-
-## Voraussetzungen
-
-| Werkzeug | Version | Zweck |
-|---|---|---|
-| [Go](https://go.dev/dl/) | 1.22 oder neuer | Backend |
-| [Node.js](https://nodejs.org/) | 20 oder neuer (empfohlen 22) | Frontend |
-| [Piper](https://github.com/OHF-Voice/piper1-gpl) | aktuell | Sprachsynthese |
-| ffmpeg | optional | MP3-Export (ohne ffmpeg wird WAV ausgeliefert) |
-| [Whisper](https://github.com/openai/whisper) | optional | Auswertung des Gesagten im Lernmodus |
-
-### Piper installieren
-
-Am einfachsten über Python (funktioniert unter Windows, macOS und Linux):
-
-```bash
-pip install piper-tts
-```
-
-**Wichtig:** `pip` legt zwar ein `piper`-Programm an, aber häufig in einem
-Ordner, der nicht im `PATH` steht – unter Windows ist das eher die Regel als
-die Ausnahme. Der Aufruf lautet dann `python -m piper` statt `piper`.
-
-Die App sucht Piper deshalb selbst und probiert der Reihe nach:
-
-```
-piper · python -m piper · python3 -m piper · py -m piper
-```
-
-Du musst also nichts konfigurieren. Beim Start schreibt das Backend in die
-Konsole, welchen Aufruf es gefunden hat, z. B.:
-
-```
-Piper:   python -m piper
-```
-
-Selbst prüfen kannst du es so (im selben Terminal, in dem du auch das Backend
-startest):
-
-```bash
-python -m piper --help
-```
-
-Kommt eine Hilfeseite, ist alles in Ordnung. Kommt `No module named piper`,
-ist das Paket in einem anderen Python installiert – dann `pip install
-piper-tts` mit genau diesem Python wiederholen:
-
-```bash
-python -m pip install piper-tts
-```
-
-Ein vollständiger Test mit einer Stimme (nachdem du unten Modelle geladen
-hast):
-
-```bash
-# Linux/macOS
-echo "Guten Abend." | python3 -m piper -m voices/de_DE-thorsten-medium.onnx -c voices/de_DE-thorsten-medium.onnx.json -f test.wav
-```
-
-```powershell
-# Windows (PowerShell)
-"Guten Abend." | python -m piper -m voices\de_DE-thorsten-medium.onnx -c voices\de_DE-thorsten-medium.onnx.json -f test.wav
-```
-
-Nur falls die automatische Suche daneben liegt (etwa bei einem selbst
-gebauten Binary oder einem venv), kannst du den Aufruf fest vorgeben:
-
-```bash
-# Linux/macOS
-export PIPER_BIN="/pfad/zu/meinem/piper"
-```
-
-```powershell
-# Windows (PowerShell) – gilt nur für dieses Fenster
-$env:PIPER_BIN = "C:\tools\piper\piper.exe"
-```
-
-Ist `PIPER_BIN` gesetzt, wird **ausschließlich** dieser Befehl geprüft.
-
-### Stimmen herunterladen
-
-Die Modelle sind mehrere hundert MB groß und liegen deshalb nicht im Repo. Lege
-sie in den Ordner `voices/` im Projektstamm. Jede Stimme besteht aus **zwei**
-Dateien:
-
-```
-voices/
-  de_DE-thorsten-medium.onnx
-  de_DE-thorsten-medium.onnx.json
-```
-
-Herunterladen zum Beispiel so:
-
-```bash
-python -m piper.download_voices de_DE-thorsten-medium --data-dir voices
-```
-
-Oder direkt von Hugging Face:
-<https://huggingface.co/rhasspy/piper-voices/tree/main/de/de_DE>
-
-### Welche deutsche Stimme? Und wie besetze ich mehrere Rollen?
-
-Die Auswahl an deutschen Piper-Stimmen ist überschaubar. Das ist der komplette
-Bestand:
-
-| Stimme | Stufe | Sprecher | Anmerkung |
-|---|---|---|---|
-| `de_DE-thorsten-high` | high | 1 | **beste deutsche Stimme**, Studioaufnahmen |
-| `de_DE-thorsten-medium` | medium | 1 | fast so gut, deutlich schneller |
-| `de_DE-thorsten_emotional-medium` | medium | 8 | derselbe Sprecher in acht Stimmungen |
-| `de_DE-mls-medium` | medium | 236 | aus Hörbuchaufnahmen, sehr schwankend |
-| `de_DE-kerstin-low`, `-karlsson-low`, `-pavoque-low`, `-ramona-low` | low | 1 | 16 kHz, rau |
-| `de_DE-eva_k-x_low` | x_low | 1 | 16 kHz, blechern |
-
-Das Naheliegende – für jede Rolle eine andere Stimme – geht damit nicht gut
-aus: Es gibt genau **eine** wirklich gute deutsche Stimme. `mls-medium` klingt
-trotz „medium“ mäßig, weil es aus Laien-Hörbuchaufnahmen unterschiedlichster
-Aufnahmequalität trainiert wurde; daran ändert auch die Wahl des Sprechers
-wenig.
-
-Der Weg, der funktioniert: **eine gute Stimme für alle Rollen, unterschieden
-über die Tonhöhe.**
-
-```bash
-python -m piper.download_voices de_DE-thorsten-high --data-dir voices
-```
-
-In der Sprecher-Tabelle gibt es dafür den Regler *Tonhöhe*. Er verschiebt
-Grundton und Formanten gemeinsam – anders als eine reine Abspielgeschwindigkeit
-klingt das nach einer anderen Person und nicht nach schnellerem Band. Das Tempo
-bleibt davon unberührt, beide Regler sind unabhängig. Neue Rollen bekommen
-automatisch verschiedene Werte, die du nach Gehör nachziehst.
-
-Als Anhaltspunkt: ±10 % sind eine andere Person gleichen Geschlechts, ±20 %
-verschieben deutlich Richtung jünger/älter. Über etwa ±25 % hinaus wird es
-karikaturhaft, deshalb ist dort Schluss. Wer mehr Abwechslung will, kombiniert
-Tonhöhe mit leicht unterschiedlichem Tempo oder nimmt für einzelne Rollen
-zusätzlich `thorsten_emotional-medium` mit seinen acht Stimmungen.
-
-## Starten
-
-Zwei Terminals, ein Befehl pro Terminal.
-
-**1. Backend**
-
-```bash
-cd backend
-go run ./cmd/server
-```
-
-Läuft auf <http://localhost:8080> und legt `data/` und `voices/` an, falls sie
-fehlen.
-
-**2. Frontend**
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Läuft auf <http://localhost:5173> und leitet `/api` an das Backend weiter.
-Diese Adresse im Browser öffnen.
-
-### Einzelne Anwendung ohne Node
-
-Wenn du das Frontend einmal baust, liefert das Go-Backend es selbst aus –
-danach reicht ein einziger Prozess:
-
-```bash
-cd frontend && npm install && npm run build
-cd ../backend && go run ./cmd/server
-# App läuft komplett auf http://localhost:8080
-```
+- Nach dem ersten Besuch offline benutzbar und auf Telefon oder Tablet als App
+  ablegbar
+- Sicherungskopie je Stück als eine Datei – Projekt, Blöcke, Sprecher,
+  Lernstand und PDF
 
 ## Bedienung
 
@@ -230,10 +89,9 @@ cd ../backend && go run ./cmd/server
    Gespeichert wird automatisch (ca. 1 s nach der letzten Änderung).
 3. **Automatisch erkennen** – wenn ein paar Blöcke stehen, füllt der Knopf
    oben rechts den Rest des Stücks (siehe unten).
-4. **Sprecher** – jeder Rolle ein Stimm-Modell zuweisen, Tonhöhe, Tempo und
+4. **Sprecher** – jeder Rolle eine Stimme zuweisen, Tonhöhe, Tempo und
    Lautstärke einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die
-   eigene Rolle markieren. Zum Besetzen mehrerer Rollen siehe „Welche deutsche
-   Stimme?“.
+   eigene Rolle markieren.
 5. **Hörfassung** – oben auswählen, welcher Teil des Stücks erzeugt werden soll
    (siehe unten), darunter die Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
@@ -306,72 +164,16 @@ Fürs ganze Stück auf einmal steht dieselbe Wahl im Dialog „Automatisch
 erkennen“ unter „Eingeklammerte Regieanweisungen im Sprechtext“:
 *entfernen* (Vorgabe), *als eigene Blöcke*, *im Text lassen*.
 
-## Konfiguration
+### Die eigene Rolle als Pause
 
-Alle Pfade sind relativ zum Projektstamm; nichts ist fest verdrahtet. Über
-Umgebungsvariablen lässt sich alles überschreiben:
+Ist „eigene Rolle aussparen“ aktiv, wird deine Rolle trotzdem synthetisiert –
+nur landet statt des Tons eine **gleich lange Stille** in der Datei. Das ist
+der Punkt: Die Aufnahme läuft im Takt des Stücks weiter, dein Einsatz kommt an
+der richtigen Stelle und ist so lang, wie er sein muss.
 
-| Variable | Standard | Bedeutung |
-|---|---|---|
-| `THEATER_ADDR` | `:8080` | Adresse des Servers |
-| `THEATER_DATA_DIR` | `<repo>/data` | Projekte, PDFs, Audio |
-| `THEATER_VOICES_DIR` | `<repo>/voices` | Piper-Modelle |
-| `PIPER_BIN` | automatisch gesucht | Piper-Kommando fest vorgeben, z. B. `python3 -m piper` |
-| `PIPER_LENGTH_SCALE_FLAG` | `--length-scale` | ältere Piper-Builds nutzen `--length_scale` |
-| `FFMPEG_BIN` | `ffmpeg` | für den MP3-Export |
-| `THEATER_SAMPLE_RATE` | `22050` | Abtastrate der Ausgabedatei |
-| `THEATER_GAP_MS` | `450` | Pause zwischen zwei Blöcken |
-| `THEATER_SKIP_PAUSE_MS` | `2500` | Ersatzpause, wenn die eigene Rolle keine Stimme hat |
-| `THEATER_LOG_PIPER` | aus | mit `1` jeden Piper-Aufruf samt Text ins Server-Log schreiben |
-
-### Was die App an Piper übergibt
-
-Bewusst so wenig wie möglich – für eine Einzelstimme mit unveränderten Reglern
-ist der Aufruf derselbe, den du auch von Hand tippen würdest:
-
-```
-piper -m voices/<modell>.onnx -c voices/<modell>.onnx.json -f <temp>.wav
-```
-
-Dazu kommt nur, was wirklich nötig ist:
-
-- `-s <id>` **nur** bei Multi-Speaker-Modellen (`num_speakers > 1`)
-- `--length-scale <wert>` **nur**, wenn der Tempo-Regler nicht auf 1,0 steht
-
-Lautstärke und Tonhöhe kennt Pipers Kommandozeile gar nicht; beide werden
-nachträglich auf die Samples gerechnet. Der Text geht über die Standardeingabe.
-
-Wer das nachprüfen will, startet das Backend mit `THEATER_LOG_PIPER=1`; dann
-steht jeder Aufruf mitsamt Text in der Konsole und lässt sich direkt mit einem
-Kommando aus der Shell vergleichen.
-
-### Zwischenspeicher und einzelne Blöcke
-
-Das Erzeugen eines Blocks dauert je nach Länge ein bis drei Sekunden – bei
-einem ganzen Stück summiert sich das. Deshalb wird jeder Block einzeln unter
-`data/projects/<id>/cache/` abgelegt, benannt nach einem Hash aus genau dem,
-was Piper zu sehen bekommt:
-
-```
-Text (normalisiert) · Stimm-Modell · Sprecher-ID · Tempo · Renderer-Version
-```
-
-Änderst du den Text eines Blocks, ändert sich sein Hash und nur dieser Block
-wird neu erzeugt. Alles andere kommt aus dem Zwischenspeicher.
-
-**Tonhöhe und Lautstärke stehen bewusst nicht im Hash.** Beide werden erst nach
-Piper auf die Samples gerechnet, also kostet das Verschieben dieser Regler
-keine neue Synthese – der Zwischenspeicher bleibt gültig.
-
-In der Blockliste hat jeder Block einen Play-Knopf. Beim ersten Mal wird der
-Block erzeugt, danach startet er sofort – und beim späteren Erzeugen des ganzen
-Stücks ist er schon fertig. Umgekehrt gilt genauso: Was beim Gesamtdurchlauf
-entstanden ist, spielt in der Liste ohne Wartezeit.
-
-Nach jedem Durchlauf werden Einträge entfernt, auf die kein Block mehr
-verweist. Der Hörfassungs-Tab zeigt Anzahl und Größe und hat einen Knopf zum
-Leeren. Als Größenordnung: Ein abendfüllendes Stück mit rund 1400 Blöcken
-belegt etwa 250 MB. Der Ordner liegt unter `data/` und damit in `.gitignore`.
+Weil das Audio dabei im Zwischenspeicher landet, kostet das Umschalten zwischen
+„mit meiner Rolle“ und „ohne“ danach nichts mehr. Hat deine Rolle keine Stimme
+zugewiesen, ist die Länge unbekannt; dann gibt es eine feste Pause von 2,5 s.
 
 ### Nur einen Teil des Stücks erzeugen
 
@@ -403,8 +205,8 @@ Die Auswahl ändert nichts an den gespeicherten Blöcken – sie legt nur fest,
 was in diesen einen Durchlauf kommt. Zusammen mit dem Zwischenspeicher heißt
 das: Ist das ganze Stück einmal erzeugt, kostet ein Ausschnitt daraus nur noch
 das Zusammenfügen. Der Dateiname des Downloads nennt den Ausschnitt
-(`<projekt>-seiten-12-18.mp3`, `<projekt>-auftritte.mp3`,
-`<projekt>-auswahl.mp3`), damit mehrere Fassungen nebeneinander liegen können.
+(`<projekt>-seiten-12-18.wav`, `<projekt>-auftritte.wav`,
+`<projekt>-auswahl.wav`), damit mehrere Fassungen nebeneinander liegen können.
 
 #### Einzelne Blöcke von Hand wählen
 
@@ -425,10 +227,6 @@ Praktischster Einstieg: erst grob mit „Seitenbereich“ oder „Auftritte“ w
 dann auf **einzeln nachjustieren** klicken. Die grobe Auswahl wandert in die
 Einzelauswahl, und du entfernst oder ergänzt nur noch, was fehlt.
 
-Berechnet wird die Auswahl im Frontend (`frontend/src/lib/selection.ts`); an
-den Server geht nur die fertige Liste aus Block-IDs und Sprungmarken. Der
-Server rendert, was in der Liste steht, in genau dieser Reihenfolge.
-
 ## Lernmodus
 
 Die Hörfassung ist eine Datei zum Mitlaufen. Der Lernmodus ist eine Probe: Du
@@ -448,7 +246,7 @@ Vor dem Start stellst du ein:
 | **Eigenen Text während der Pause zeigen** | für den ersten Durchgang; sonst deckst du ihn bei Bedarf auf |
 | **Pause automatisch beenden** | nach n Sekunden weiter, statt selbst zu klicken |
 | **Mitschneiden** | nimmt deine Repliken auf, direkt nach der Auflösung anhörbar; der Durchlauf wartet dann auf „Weiter“ |
-| **Gesagtes auswerten** | schickt den Mitschnitt an die lokale Spracherkennung und vergleicht Wort für Wort (siehe unten) |
+| **Gesagtes auswerten** | verwandelt den Mitschnitt im Browser in Text und vergleicht Wort für Wort (siehe unten) |
 
 Im Durchlauf: <kbd>Leertaste</kbd> weiter (beendet die Pause und löst auf),
 <kbd>R</kbd> Replik wiederholen, <kbd>T</kbd> eigenen Text aufdecken,
@@ -466,10 +264,10 @@ beim ersten Mal nach dem Mikrofon; ohne Erlaubnis läuft die Probe trotzdem,
 nur eben ohne Mitschnitt.
 
 **Wartezeit beim ersten Mal.** Jede Replik wird beim ersten Abspielen einmal
-mit Piper erzeugt (ein paar Sekunden) und liegt danach im selben
-Zwischenspeicher, den auch die Hörfassung nutzt. Während eine Replik läuft,
-werden die nächsten vier im Hintergrund geladen; „Vorbereiten“ erledigt vorab
-den ganzen Ausschnitt, dann läuft der Durchlauf ohne Stocken.
+erzeugt (ein bis zwei Sekunden) und liegt danach im selben Zwischenspeicher,
+den auch die Hörfassung nutzt. Während eine Replik läuft, werden die nächsten
+vier im Hintergrund geladen; „Vorbereiten“ erledigt vorab den ganzen
+Ausschnitt, dann läuft der Durchlauf ohne Stocken.
 
 ### Wo der Durchlauf beginnt
 
@@ -508,15 +306,14 @@ dazu, dass sie das getan hat. Liegt eine Sprungmarke („Weiter auf Seite 12.“
 direkt davor, beginnt der Durchlauf auf ihr: Sie ist der Satz, der sagt, wo
 man ist.
 
-Die Stelle steht in `project.json`, nicht im Browser. Sie überlebt damit einen
-anderen Browser und einen geleerten Zwischenspeicher und liegt in derselben
-Sicherung wie das übrige Projekt.
+Die Stelle steht in `project.json` neben dem Stück, nicht in einem eigenen
+Browser-Winkel. Sie liegt damit in derselben Sicherungskopie wie das übrige
+Projekt und wandert mit ihr auf ein anderes Gerät.
 
 ### Gesagtes auswerten
 
-Ist der Schalter an, wandert der Mitschnitt nach jeder Replik an eine **lokal
-installierte Spracherkennung** und das Ergebnis wird Wort für Wort mit dem
-Buch verglichen:
+Ist der Schalter an, wird der Mitschnitt nach jeder Replik **im Browser** in
+Text verwandelt und Wort für Wort mit dem Buch verglichen:
 
 > 29er <span title="verstanden: Romane">Romanée</span> Conti. *(bitte)*
 > — 83 % getroffen, 2 von 3 Wörtern wörtlich, 1 fast
@@ -525,60 +322,31 @@ Fünf Zustände, farbig: *sitzt*, *fast*, *anders gesagt*, *nicht gehört*,
 *zusätzlich*. Darunter steht immer, was die Erkennung tatsächlich verstanden
 hat – damit nachvollziehbar bleibt, wer sich verhört hat.
 
-**Das ist eine Gedächtnisstütze, kein Urteil.** Whisper liegt für Deutsch bei
-rund 4–7 % Wortfehlerrate unter guten Bedingungen; für „fehlt mir die halbe
-Replik?“ reicht das locker. Ausgerechnet die Wörter, auf die es im Theater
-ankommt, trifft die Erkennung aber am schlechtesten: Eigennamen, Dialekt,
-leises oder gespieltes Sprechen, kurze Einwürfe. Deshalb:
+Erkannt wird mit **Whisper (`base`)**, das beim ersten Einschalten einmal
+geladen wird (rund 200 MB) und danach im Browser bleibt. Eine Replik dauert
+etwa eine Sekunde – und das reicht, weil die Erkennung läuft, während die
+Auflösung abgespielt wird.
+
+**Das ist eine Gedächtnisstütze, kein Urteil.** Für „fehlt mir die halbe
+Replik?“ reicht die Erkennung locker. Ausgerechnet die Wörter, auf die es im
+Theater ankommt, trifft sie aber am schlechtesten: Eigennamen, Dialekt, leises
+oder gespieltes Sprechen, kurze Einwürfe. Gemessen an genau der Metrik dieser
+App – „saß die Replik?“ – kommt `base` auf 77 %; das kleinere `tiny` fällt mit
+65 % durch, das dreimal so große `small` bringt einen Punkt. Deshalb:
 
 - Verglichen wird **unscharf**: normalisiert (Kleinschreibung, Satzzeichen und
   Akzente weg), dann per Levenshtein-Abstand und **Kölner Phonetik** – dem
   deutschen Gegenstück zu Soundex. „Romane Conti“ zählt damit als *fast*,
   „Meyer“ und „Mayr“ als dasselbe Wort. Kurze Wörter bekommen keine Toleranz,
-  „der“ und „den“ bleiben verschieden.
+  „der“ und „den“ bleiben verschieden. Zahlwörter werden ausgerechnet, damit
+  „29er“ und „neunundzwanziger“ dasselbe sind.
 - Der erwartete Satz geht **nicht** an die Erkennung. Whisper folgt einem
-  `--initial_prompt` sehr willig; bekäme es die Replik vorgesagt, schriebe es
+  vorgegebenen Text sehr willig; bekäme es die Replik vorgesagt, schriebe es
   sie auf, egal was gesagt wurde – ein Vergleich, der immer zustimmt, ist
-  schlechter als keiner. Übergeben werden nur die **Rollennamen** des Stücks,
-  die kein Erkenner erraten kann.
+  schlechter als keiner.
 - Stimmt der Text im Block nicht, korrigierst du ihn direkt in der Auflösung
   („Text korrigieren“). Der Vergleich färbt sich sofort neu, ohne die
   Erkennung noch einmal zu bemühen.
-
-#### Spracherkennung installieren
-
-Optional. Fehlt sie, bleibt der Schalter grau und alles andere funktioniert.
-
-```bash
-pip install openai-whisper
-```
-
-Gesucht wird wie bei Piper der Reihe nach `whisper`, `python -m whisper`,
-`python3 -m whisper`, `py -m whisper`. Das Modell steuert `WHISPER_MODEL`
-(Vorgabe `small`; `medium` ist genauer und langsamer, `base` umgekehrt). Beim
-ersten Lauf lädt Whisper das Modell herunter.
-
-Rechenzeit auf der CPU: ein paar Sekunden je Replik. Sie läuft, während die
-Auflösung abgespielt wird.
-
-| Variable | Zweck |
-|---|---|
-| `WHISPER_BIN` | fester Aufruf statt der automatischen Suche |
-| `WHISPER_MODEL` | Modellgröße (`tiny`…`large`), Vorgabe `small` |
-| `STT_CMD` | komplette Befehlszeile für andere Engines. Platzhalter `{audio}`, `{model}`, `{out}`; der Text wird von der Standardausgabe gelesen. Für whisper.cpp etwa: `STT_CMD='whisper-cli -m ggml-small.bin -f {audio} -l de -nt'` |
-| `THEATER_LOG_STT` | jeden Aufruf ins Server-Log schreiben |
-
-### Die eigene Rolle als Pause
-
-Ist „eigene Rolle aussparen“ aktiv, wird deine Rolle trotzdem synthetisiert –
-nur landet statt des Tons eine **gleich lange Stille** in der Datei. Das ist
-der Punkt: Die Aufnahme läuft im Takt des Stücks weiter, dein Einsatz kommt an
-der richtigen Stelle und ist so lang, wie er sein muss.
-
-Weil das Audio dabei im Zwischenspeicher landet, kostet das Umschalten zwischen
-„mit meiner Rolle“ und „ohne“ danach nichts mehr. Hat deine Rolle keine Stimme
-zugewiesen, ist die Länge unbekannt; dann gibt es die feste Pause aus
-`THEATER_SKIP_PAUSE_MS`.
 
 ## Karteikarten
 
@@ -658,100 +426,102 @@ Der Balken über der Einrichtung zeigt, wie sich der Stapel auf die Fächer
 verteilt – links, was noch nicht sitzt. „Lernstand zurücksetzen“ leert ihn
 wieder; die Repliken bleiben selbstverständlich stehen.
 
-## Datenablage
+## Was der Browser wann lädt
+
+Nichts wird auf Verdacht geholt. Wer nur ein PDF öffnet und Blöcke markiert,
+lädt die Anwendung und sonst nichts.
+
+| Wann | Was | Größe |
+|---|---|---|
+| beim Aufrufen | die Anwendung selbst | ein paar hundert kB |
+| beim ersten Vorlesen | onnxruntime + espeak-ng (nur Deutsch) | 12 MB |
+| beim ersten Vorlesen | die Stimme *Thorsten* | 63 MB |
+| beim ersten „Gesagtes auswerten“ | onnxruntime für Whisper | 23 MB |
+| beim ersten „Gesagtes auswerten“ | das Modell `whisper-base` | ~200 MB |
+
+Alles davon bleibt im Browser. Der zweite Besuch lädt nichts nach, und nach dem
+ersten Besuch läuft die Seite auch ohne Netz.
+
+Die Stimme kommt vom
+[piper-voices-Repository](https://huggingface.co/rhasspy/piper-voices) auf
+Hugging Face, das Whisper-Modell von
+[onnx-community](https://huggingface.co/onnx-community/whisper-base). Beides
+sind die einzigen fremden Adressen, die die Seite überhaupt anspricht.
+
+## Wo die Stücke liegen
+
+Im Browser, in dessen eigenem Dateisystem (OPFS) – ein Ordner je Stück, in
+derselben Aufteilung, die früher auf der Festplatte lag:
 
 ```
-data/projects/<projekt-id>/
-  project.json    # Name, PDF, Seitenzahl, eigene Rolle, zuletzt geübte Stelle,
+projects/<projekt-id>/
+  project.json    # Name, Seitenzahl, eigene Rolle, zuletzt geübte Stelle,
                   # Premierentermin
   blocks.json     # markierte Blöcke mit relativen Koordinaten und Text
   speakers.json   # Stimme, Tonhöhe, Tempo, Lautstärke und Farbe je Sprecher
   cards.json      # Karteikarten: Fach, fällig ab, Zähler – je geübter Replik
   source.pdf      # das importierte Stück
-  audio/          # erzeugte Hörfassungen
   cache/          # Audio je Block, benannt nach dem Hash seiner Einstellungen
 ```
 
 Die Rechteck-Koordinaten sind relativ zur Seitengröße (0–1) gespeichert und
-damit unabhängig von Zoomstufe und Auflösung. Alle Dateien sind lesbares JSON
-und lassen sich notfalls von Hand korrigieren.
+damit unabhängig von Zoomstufe und Auflösung.
 
-`data/` und `voices/` stehen in `.gitignore` – PDFs können urheberrechtlich
-geschützt sein und Stimm-Modelle sind zu groß fürs Repository.
+**Mach Sicherungskopien.** Ein Browser, der seinen Speicher aufräumt, nimmt die
+Stücke mit – und niemand außer dir hat eine Kopie. Der Knopf neben jedem Stück
+schreibt eine Datei `<projekt>.theater.json` mit allem, was sich nicht
+nachrechnen lässt: Projekt, Blöcke, Sprecher, Lernstand und das PDF. Der
+Zwischenspeicher bleibt draußen, er ist in dreieinhalb Minuten wieder da.
+Dieselbe Datei bringt ein Stück auf ein zweites Gerät; eingelesen wird sie
+**neben** das vorhandene, nie darüber.
+
+Beim ersten großen Download fragt die App den Browser, ob er diesen Speicher
+verschonen möge (`navigator.storage.persist()`). Chrome gewährt das meist
+stillschweigend, Safari ist strenger – verlassen sollte man sich darauf nicht,
+und genau deshalb gibt es die Sicherungskopie.
 
 ## Projektstruktur
 
 ```
-backend/
-  cmd/server/         # Einstiegspunkt
-  internal/config/    # Pfade und externe Werkzeuge
-  internal/project/   # Projekte, Blöcke, Sprecher (JSON-Persistenz)
-  internal/voices/    # Scan des voices/-Ordners
-  internal/synth/     # Piper-Aufruf, Audio-Konkatenation, Jobs
-  internal/stt/       # optionale Spracherkennung für den Lernmodus
-  internal/httpapi/   # HTTP-Router und Handler
 frontend/
-  src/api/            # typisierter API-Client
+  public/wasm/        # espeak-ng, onnxruntime – von npm run wasm gefüllt
+  public/sw.js        # Service Worker: nach dem ersten Besuch offline
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
                       # AutoDetect, SynthesizePanel, Rehearsal
   src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf,
                       # Karteikarten (Leitner + Sitzungsqueue),
-                      # Wortvergleich (Levenshtein + Kölner Phonetik)
+                      # Wortvergleich (Levenshtein + Kölner Phonetik),
+                      # Synthese (piper, synth, audio, storage, store),
+                      # Spracherkennung (stt)
   src/pages/          # Projektliste und Editor
+spike-wasm/           # Wegwerf-Prototypen aus der Umstellung, mit Messwerten
+spike-whisper/
+spike-storage/
+tools/                # Prüfstände, die Go und TypeScript gegeneinander fuhren
+MIGRATION.md          # wie aus der Server-App eine Browser-App wurde
 ```
 
-## HTTP-API
-
-| Methode | Pfad | Zweck |
-|---|---|---|
-| `POST` | `/api/projects` | Projekt anlegen (multipart: `name`, `pdf`) |
-| `GET` | `/api/projects` | Projekte auflisten |
-| `GET` | `/api/projects/{id}` | Projektdetails |
-| `PUT` | `/api/projects/{id}` | Name, eigene Rolle, Seitenzahl, Premierentermin ändern |
-| `DELETE` | `/api/projects/{id}` | Projekt löschen |
-| `PUT` | `/api/projects/{id}/progress` | zuletzt geübte Stelle merken (Block, Seite, Rolle, Auswahl) |
-| `DELETE` | `/api/projects/{id}/progress` | gemerkte Stelle vergessen |
-| `GET` | `/api/projects/{id}/cards` | Lernstand der Karteikarten |
-| `PATCH` | `/api/projects/{id}/cards` | einzelne Karten einfügen oder ändern (`null` löscht eine) |
-| `DELETE` | `/api/projects/{id}/cards` | Lernstand zurücksetzen |
-| `GET` | `/api/projects/{id}/pdf` | Original-PDF ausliefern |
-| `GET`/`PUT` | `/api/projects/{id}/blocks` | Blöcke laden/ersetzen |
-| `GET` | `/api/projects/{id}/blocks/{blockId}/audio` | einzelnen Block erzeugen/abspielen |
-| `POST` | `/api/projects/{id}/blocks/{blockId}/transcribe` | Mitschnitt (multipart `audio`) in Text verwandeln |
-| `GET`/`DELETE` | `/api/projects/{id}/cache` | Zwischenspeicher abfragen/leeren |
-| `GET`/`PUT` | `/api/projects/{id}/speakers` | Sprecher-Konfiguration |
-| `GET` | `/api/stt` | ob eine Spracherkennung gefunden wurde |
-| `GET` | `/api/voices` | installierte Piper-Modelle |
-| `POST` | `/api/voices/preview` | Hörprobe synthetisieren (WAV) |
-| `POST` | `/api/projects/{id}/synthesize` | Job starten, liefert `jobId`; Body: `skipMyRole`, `includeDirections`, optional `selection` |
-| `GET` | `/api/projects/{id}/synthesize/{jobId}` | Job-Status |
-| `DELETE` | `/api/projects/{id}/synthesize/{jobId}` | Job abbrechen |
-| `GET` | `/api/projects/{id}/audio/{jobId}` | fertige Datei streamen |
+Die Spikes und `tools/` sind Zeitdokumente: Sie halten fest, was gemessen wurde
+und warum es so gebaut ist. Die Prüfstände brauchen den Go-Quelltext, den es
+nur noch in der Versionsgeschichte gibt.
 
 ## Fehlersuche
 
-**„Piper nicht gefunden“** – der Sprecher-Tab listet auf, welche Befehle
-probiert wurden und woran sie gescheitert sind; dieselbe Information steht beim
-Start in der Backend-Konsole. Häufigste Ursache: `pip install piper-tts` lief
-in einem anderen Python als dem, das im `PATH` steht. Test:
-`python -m piper --help`. Nach einer Neuinstallation reicht „Stimmen neu
-einlesen“ im Sprecher-Tab, das Backend sucht dann erneut.
+**Die erste Hörprobe dauert ewig** – beim allerersten Mal lädt der Browser die
+Stimme (63 MB). Der Fortschritt steht über der Tabelle. Danach kommt sie aus
+dem eigenen Speicher.
 
-**„Keine Stimm-Modelle gefunden“** – liegen `*.onnx` **und** `*.onnx.json` im
-Ordner `voices/`? Der Pfad steht in der Warnung im Sprecher-Tab.
+**„… gibt es nicht mehr – bitte neu wählen“** im Sprecher-Tab – das Stück steht
+noch auf einer Stimme aus der Zeit, als die Modelle von Hand installiert
+wurden. Einfach *Thorsten* wählen; mehrere Rollen unterscheidest du über
+Tonhöhe und Tempo.
 
-**Synthese bricht mit einem Piper-Fehler ab** – ältere Piper-Versionen kennen
-`--length-scale` nicht. Dann `PIPER_LENGTH_SCALE_FLAG=--length_scale` setzen.
+**Die Auswertung lädt und lädt** – das Whisper-Modell sind rund 200 MB. Bricht
+der Download ab, sagt es der Satz unter dem Schalter; ein zweiter Klick nimmt
+den Faden wieder auf.
 
-**Umlaute werden als Zeichen vorgelesen („A Tilde“, „Absatz“)** – das war ein
-Encoding-Fehler und ist behoben. Zum Verständnis, falls es irgendwo wieder
-auftaucht: Der Text geht als UTF-8 an Piper, Pipers Python-Variante decodiert
-die Standardeingabe aber mit der Zeichentabelle des Systems – unter deutschem
-Windows cp1252. Aus `Hörprobe` wird dann `HÃ¶rprobe`, und espeak spricht
-unbekannte Zeichen mit Namen aus: `Ã` → „A Tilde“, `¶` → „Absatz“. Das Backend
-setzt für den Piper-Prozess deshalb `PYTHONUTF8=1` und
-`PYTHONIOENCODING=utf-8`. Ein Satz ohne Umlaute ist übrigens unauffällig –
-darum fällt der Fehler beim Testen leicht durchs Raster.
+**Kein Mikrofon** – der Browser gibt es nur über HTTPS frei (oder auf
+`localhost`). Ohne Erlaubnis läuft die Probe weiter, nur ohne Mitschnitt.
 
 **Beim Rechteckziehen kommt kein Text** – das PDF ist vermutlich ein Scan ohne
 Textebene. Der Text lässt sich im Dialog trotzdem von Hand eintippen; für
@@ -761,45 +531,43 @@ größere Stücke hilft vorher eine OCR-Behandlung (z. B. `ocrmypdf`).
 nicht die Lesereihenfolge. Blöcke in der rechten Liste per Drag & Drop
 sortieren; die Nummer am Rahmen zeigt die Vorlese-Position.
 
+**Ein Stück ist verschwunden** – hat der Browser aufgeräumt (Verlauf gelöscht,
+„Website-Daten entfernen“, privates Fenster), sind die Stücke weg. Dann hilft
+nur die Sicherungskopie. Deshalb: siehe oben.
+
 ## Tests
 
-Backend bauen und prüfen:
-
 ```bash
-cd backend && go vet ./... && go test ./... && go build ./...
-```
-
-`go test` prüft die Audio-Bausteine (Resampling, Zeitdehnung, Tonhöhe), den
-Zwischenspeicher, die Zusammenstellung eines Durchlaufs (Reihenfolge der
-Auswahl, Sprungmarken, ausgesparte eigene Repliken, fehlende Stimmen) und die
-Anbindung der Spracherkennung.
-
-Frontend typprüfen, testen und bauen:
-
-```bash
-cd frontend && npm test && npm run build
+cd frontend
+npm test             # Vitest
+npm run build        # Typprüfung und Build
+npm run lint
 ```
 
 `npm test` prüft die automatische Blockerkennung – Sprechernamen, die als zwei
 Textstücke gesetzt sind, das Auftrennen eingeklammerter Einschübe,
-Regieanweisungen, die mit einem Rollennamen beginnen,
-Repliken über Seitengrenzen, Seitenzahlen –, die Auswahl eines Ausschnitts –
-Seitenbereiche, Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher
-Auftritte, die Einzelauswahl und die Sprungmarken – und den Ablauf des
-Lernmodus: welche Schritte gehört und welche gesprochen werden, was beim
-Überspringen der Regieanweisungen übrig bleibt, und den Wortvergleich –
-Kölner Phonetik gegen die dokumentierten Beispiele, Levenshtein, und was bei
-fehlenden, zusätzlichen und anders gesagten Wörtern herauskommt.
+Regieanweisungen, die mit einem Rollennamen beginnen, Repliken über
+Seitengrenzen, Seitenzahlen –, die Auswahl eines Ausschnitts – Seitenbereiche,
+Vor- und Nachlauf um die eigene Rolle, das Zusammenfassen naher Auftritte, die
+Einzelauswahl und die Sprungmarken –, den Ablauf des Lernmodus, den
+Wortvergleich (Kölner Phonetik gegen die dokumentierten Beispiele, Levenshtein,
+Zahlwörter), die Audio-Bausteine (Resampling, Zeitdehnung, Tonhöhe), die
+Planung eines Durchlaufs samt Zwischenspeicher und die Ablage der Stücke.
 
-Optionaler Durchklick-Test im Browser (Backend muss laufen, Frontend gebaut
-sein):
-
-```bash
-cd frontend && npm install -D playwright && node e2e-smoke.mjs
-```
+Die Bausteine, die aus dem früheren Go-Backend portiert wurden, sind gegen ihr
+Vorbild geprüft worden: `tools/audio-parity` fuhr beide Fassungen der
+Audio-Kette über dieselben Eingaben (91 Fälle, 75 sample-genau, der Rest
+≤ 1 LSB – die Differenz stammt aus `sin`/`cos` von Go gegen V8), und
+`tools/cache-key-parity` verglich 1296 Zwischenspeicher-Schlüssel. Beide
+laufen nur noch mit dem Go-Quelltext aus der Versionsgeschichte; was sie
+gezeigt haben, steht in `MIGRATION.md`.
 
 ## Lizenz
 
-Der Code steht unter der MIT-Lizenz. Piper und die Stimm-Modelle haben eigene
-Lizenzen – bitte dort nachsehen, bevor du erzeugte Audiodateien
-weiterverbreitest.
+**GPL-3.** Die Seite liefert espeak-ng als WASM mit – das ist der Teil, der aus
+Text Phoneme macht –, und espeak-ng steht unter der GPL-3. Damit steht das
+Ganze unter der GPL-3; der volle Text liegt in `LICENSE`.
+
+Die Stimme *Thorsten* und das Whisper-Modell haben eigene Lizenzen und werden
+nicht mitgeliefert, sondern beim ersten Gebrauch geladen – bitte dort
+nachsehen, bevor du erzeugte Audiodateien weiterverbreitest.

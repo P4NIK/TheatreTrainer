@@ -1,0 +1,14 @@
+{
+  "name": "Theater-Vorleser",
+  "short_name": "Vorleser",
+  "description": "Theaterstücke proben: vorlesen lassen, eigene Rolle üben – alles im Browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4c6ef5",
+  "lang": "de",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

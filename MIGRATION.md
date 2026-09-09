@@ -205,6 +205,12 @@ Dazu kommt ein kleines Vite-Plugin: der Bundler kopiert die 23 MB `.wasm`
 zusätzlich nach `dist/`, wo sie nach dem Pinnen niemand mehr holt. Es wirft sie
 wieder heraus.
 
+Und eine Zeile, die sich nur im Dev-Server zeigt: beim ersten Einschalten der
+Auswertung entdeckte Vite `@huggingface/transformers` als neue Abhängigkeit,
+bündelte sie vor und lud die Seite neu – man stand mitten im Einschalten wieder
+auf der Startseite. Nachgestellt und behoben mit
+`optimizeDeps: { exclude: ['@huggingface/transformers'] }`.
+
 **Ungeprüft bleibt die Erkennung selbst** – huggingface.co ist aus der
 Umgebung, in der ich baue, nicht erreichbar. Belegt sind: Audio-Umrechnung,
 Worker, transformers.js im Build *und* im Dev-Server, die WASM-Paarung an einer
@@ -224,15 +230,47 @@ Damit ruft das Frontend **keinen Endpunkt des Backends mehr auf**;
 `api/client.ts` ist gelöscht. Übrig bleibt der eine Sonderfall: die einmalige
 Übernahme alter Stücke in `legacyImport.ts`.
 
-**7. Erster Eindruck.** Stufenweises Laden mit sichtbarem Fortschritt, ein
-eigener espeak-Build nur mit Deutsch, Service Worker fürs Offline-Arbeiten.
-Für Laien ist dieser Schritt kein Beiwerk, sondern der, der über Benutzen oder
-Weggehen entscheidet.
+**7. Erster Eindruck — erledigt.** Drei Dinge:
 
-**8. Backend löschen.** `backend/` fällt komplett weg, die README schrumpft auf
-„Seite aufrufen". Das ist der eigentliche Gewinn: kein Go, kein Python, kein
-`piper-tts`, kein `openai-whisper`, keine Stimmen von Hand – und keine
-Betriebskosten.
+*Stufenweises Laden* stand schon: die Stimme kommt beim ersten Vorlesen, das
+Whisper-Modell beim Einschalten der Auswertung, beide mit Fortschrittsbalken.
+
+*espeak nur mit Deutsch* – **ohne eigenen Emscripten-Build.** Der Datenblob
+trägt sein Verzeichnis als JSON im Glue-Skript; `fetch-wasm.mjs` liest es,
+wirft die Wörterbücher aller anderen Sprachen weg und schreibt Blob und
+Verzeichnis neu. **17,2 MB werden zu 1,0 MB.** Behalten wird neben `de_dict`
+auch `en_dict`: espeak fällt für Fremdwörter darauf zurück, und ohne es klang
+„Romanée Conti" anders – das war gemessen, nicht vermutet. Mit ihm sind fünf
+Testsätze (Umlaute, Zahlwörter, französische Namen, mehrere Sätze) **Sample für
+Sample dieselben** wie mit dem vollen Blob. `public/wasm/` schrumpft damit von
+51 auf 35 MB, und davon sind 22,5 MB nur für den Lernmodus.
+
+*Service Worker* (`public/sw.js`, 40 Zeilen, ohne Bibliothek): Seitenaufrufe
+erst aus dem Netz, alles andere erst aus dem Zwischenspeicher. Keine
+Vorab-Liste – die Dateinamen tragen einen Hash, und 35 MB beim ersten Besuch
+vorzuladen wäre das Gegenteil des stufenweisen Aufbaus. Nachgestellt in
+Chromium: nach dem ersten Besuch startet die Seite ohne Netz, eine vorher
+geholte WASM-Datei kommt aus dem Zwischenspeicher, eine nie geholte scheitert
+ehrlich. Dazu ein Manifest und ein Icon: auf Telefon und Tablet lässt sich die
+Seite als App ablegen. Registriert wird nur im Build – im Dev-Server würde ein
+Service Worker die Dateien festhalten, die Vite gerade frisch ausliefert.
+
+**8. Backend löschen — erledigt.** `backend/`, `docker/` und `legacyImport.ts`
+sind weg, `voices/` und `data/` stehen nur noch als Reste auf der Platte (die
+Stücke liegen im Browser, die Ordner darf man löschen, sobald eine
+Sicherungskopie existiert). Die README ist von 800 Zeilen mit sechs
+Installationsabschnitten auf eine Seite „Loslegen" geschrumpft; die Bedienung
+darin ist geblieben, wie sie war.
+
+Zwei Dinge kamen beim Aufräumen noch dazu:
+
+- **Die Lizenz ist jetzt GPL-3**, mit vollem Text in `LICENSE`. espeak-ng wird
+  ausgeliefert, damit gilt seine Lizenz für das Ganze. Das war von Anfang an
+  der Preis dieses Wegs und ist bei einem offenen Hobbyprojekt keiner.
+- **Alle Pfade laufen über `BASE_URL`.** Damit läuft die Seite auch in einem
+  Unterordner – auf GitHub Pages der Normalfall. Gegengeprüft in Chromium:
+  Synthese, Whisper-Worker und Service Worker (Scope `/proben/`) unter
+  `--base=/proben/`, offline eingeschlossen.
 
 ## Was offen ist
 
@@ -267,12 +305,12 @@ Antwort darauf, und deshalb steht er nicht am Ende der Liste, sondern gehört zu
 Schritt 5. Wer ein iPad zur Hand hat, sollte den Speicher-Spike dort einmal
 laufen lassen; er braucht nichts als einen Browser.
 
-**Die Bedienung ist noch auf Bastler zugeschnitten.** Wer heute eine Stimme
-zuordnet, sieht `de_DE-mls-medium`, eine Sprecher-ID zwischen 0 und 235 und
-Regler für `length_scale`. Das ist für den Autor gebaut, nicht für jemanden,
-der ein Stück lernen will. Der Umbau ist die Gelegenheit, das hinter Namen und
-Vorgaben zu verstecken – keine Migrationsfrage, aber eine, die über
-Nutzerfreundlichkeit entscheidet.
+**Die Bedienung ist unterwegs.** Aus `de_DE-mls-medium`, einer Sprecher-ID
+zwischen 0 und 235 und einem Regler namens `length_scale` ist „Thorsten" mit
+Tempo, Tonhöhe und Lautstärke geworden; die Sprecher-ID-Spalte gibt es nicht
+mehr. Was bleibt: der erste Besuch erklärt sich noch nicht von selbst – wer ein
+PDF hochlädt, muss wissen, dass er Blöcke markieren soll. Das ist keine
+Migrationsfrage, aber die nächste, die über Nutzerfreundlichkeit entscheidet.
 
 ## Was am Ende wegfällt
 
@@ -286,4 +324,18 @@ README.md                  "Voraussetzungen", "Piper installieren",
 ```
 
 Übrig bleibt ein Frontend auf einem statischen Hoster. Aus einer Anleitung mit
-sechs Installationsabschnitten wird ein Link.
+sechs Installationsabschnitten wurde ein Link.
+
+---
+
+## Was am Ende dasteht
+
+| | vorher | jetzt |
+|---|---|---|
+| Zu installieren | Go, Python, `piper-tts`, `openai-whisper`, ffmpeg, Stimmen von Hand | nichts |
+| Betrieb | ein Rechner, der läuft | ein statischer Hoster, auch ein kostenloser |
+| Ein Block | 1–3 s (Prozessstart, 60 MB neu laden) | 0,15 s |
+| Ein ganzes Stück | ~20 min | ~3,5 min, danach Sekunden aus dem Zwischenspeicher |
+| Eine Replik erkennen | „ein paar Sekunden" auf der CPU | 0,95 s im Browser |
+| Erster Besuch | Installationsanleitung | die Seite, dann 63 MB beim ersten Vorlesen |
+| Ohne Netz | ja, nach der Installation | ja, nach dem ersten Besuch |

@@ -22,17 +22,18 @@ function dropBundledOnnxWasm(): Plugin {
   }
 }
 
-// Der Proxy ist nur noch für die einmalige Übernahme alter Stücke da
-// (lib/legacyImport.ts). Sonst spricht das Frontend mit keinem Server mehr.
-// Standardmäßig läuft das Go-Backend auf :8080, VITE_API_TARGET ändert das.
-const apiTarget = process.env.VITE_API_TARGET ?? 'http://localhost:8080'
-
 export default defineConfig({
   plugins: [react(), dropBundledOnnxWasm()],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
-    },
-  },
+  /*
+   * Ohne diese Zeile lädt der Dev-Server die Seite neu, sobald der
+   * Whisper-Worker das erste Mal geladen wird: Vite entdeckt dabei eine neue
+   * Abhängigkeit, bündelt sie vor und meldet "optimized dependencies changed.
+   * reloading" – man landet mitten im Einschalten wieder auf der Startseite.
+   * Ausgenommen wird sie einmal beim Start aufgelöst und nie wieder angefasst.
+   * Betrifft nur `npm run dev`; der Build hat das Problem nicht.
+   */
+  optimizeDeps: { exclude: ['@huggingface/transformers'] },
+  // Kein Proxy mehr: die Seite spricht mit keinem Server. Was sie lädt, kommt
+  // aus dem eigenen Ordner oder direkt von HuggingFace.
+  server: { port: 5173 },
 })

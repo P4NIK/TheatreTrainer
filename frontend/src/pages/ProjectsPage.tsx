@@ -25,7 +25,6 @@ import {
 } from '@tabler/icons-react'
 
 import { closeEngine } from '../lib/engine'
-import { legacyExport, legacyProjects } from '../lib/legacyImport'
 import { store } from '../lib/store'
 import type { Project } from '../types'
 
@@ -40,19 +39,12 @@ export default function ProjectsPage({ onOpen }: Props) {
   const [name, setName] = useState('')
   const [pdf, setPdf] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
-  /** Plays that are still in the old backend and could be taken over. */
-  const [legacy, setLegacy] = useState<Project[]>([])
-  const [taking, setTaking] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     try {
-      const mine = await store.listProjects()
-      setProjects(mine)
+      setProjects(await store.listProjects())
       setError(null)
-      // Only worth asking while there is nothing here yet: afterwards the old
-      // backend is history, and a failed request is the normal answer.
-      setLegacy(mine.length === 0 ? await legacyProjects() : [])
     } catch (e) {
       setError((e as Error).message)
       setProjects([])
@@ -129,28 +121,6 @@ export default function ProjectsPage({ onOpen }: Props) {
     }
   }
 
-  /** Copies the plays out of the old backend into this browser. */
-  const takeOver = async () => {
-    setTaking(true)
-    try {
-      for (const p of legacy) await store.importProject(await legacyExport(p.id))
-      await load()
-      notifications.show({
-        color: 'green',
-        message:
-          legacy.length === 1 ? 'Das Stück ist übernommen.' : `${legacy.length} Stücke sind übernommen.`,
-      })
-    } catch (e) {
-      notifications.show({
-        color: 'red',
-        title: 'Übernahme fehlgeschlagen',
-        message: (e as Error).message,
-      })
-    } finally {
-      setTaking(false)
-    }
-  }
-
   return (
     <Container size="md">
       <Group justify="space-between" mb="lg">
@@ -183,20 +153,6 @@ export default function ProjectsPage({ onOpen }: Props) {
       {error && (
         <Alert color="red" mb="md" title="Der Browser-Speicher ließ sich nicht lesen">
           {error}
-        </Alert>
-      )}
-
-      {legacy.length > 0 && (
-        <Alert color="blue" mb="md" title="Es liegen noch Stücke im alten Backend">
-          <Stack gap="xs" align="flex-start">
-            <Text size="sm">
-              {legacy.map((p) => p.name).join(', ')} – die Stücke werden mitsamt PDF, Blöcken und
-              Lernstand in diesen Browser kopiert. Im Backend bleiben sie unangetastet.
-            </Text>
-            <Button size="xs" loading={taking} onClick={takeOver}>
-              Übernehmen
-            </Button>
-          </Stack>
         </Alert>
       )}
 

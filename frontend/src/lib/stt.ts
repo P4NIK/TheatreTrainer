@@ -22,6 +22,7 @@
  * never fetches these 200 MB.
  */
 
+import { WASM_BASE } from './generated'
 import type { FromStt, ToStt } from './sttWorker'
 
 /** What the worker sends in answer to a message – progress is not an answer. */
@@ -45,7 +46,7 @@ export interface Recognition {
   ms: number
 }
 
-let wasmBase = '/wasm/'
+let wasmBase = WASM_BASE
 let modelHost: string | undefined
 
 /** Where the WASM files live, and optionally where the models come from. */
