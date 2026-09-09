@@ -1,5 +1,11 @@
 # Theater-Vorleser: Build-Spezifikation
 
+> **Zeitdokument.** Diese Spezifikation beschreibt die erste Fassung – ein
+> Go-Backend mit Piper als Prozess und einem React-Frontend davor. Die App
+> läuft inzwischen vollständig im Browser, das Backend gibt es nicht mehr.
+> Was sich geändert hat und warum, steht in `MIGRATION.md`.
+
+
 Diese Datei ist als direkte Arbeitsanweisung für einen Coding-Agenten (Claude
 Code) gedacht. Sie beschreibt Architektur, Datenmodell, API und eine
 empfohlene Bau-Reihenfolge. Am Ende steht ein fertiger Copy-Paste-Prompt.

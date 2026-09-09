@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>&#127917;</text></svg>">
+<title>Piper-WASM-Spike – Theater-Vorleser</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --fg: #1d1b19; --muted: #6b6560; --line: #e2ddd7;
+    --card: #fff; --accent: #7a4a2b; --ok: #1f6b3a; --warn: #8a5a00; --err: #a32020;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17161a; --fg: #ece9e4; --muted: #9b948c; --line: #302d33;
+      --card: #1f1e23; --accent: #d99a6c; --ok: #6fce93; --warn: #e0b45c; --err: #f0817c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px 18px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px 18px; }
+  .grid > div { display: flex; justify-content: space-between; gap: 10px;
+                border-bottom: 1px dotted var(--line); padding: 3px 0; font-size: 13px; }
+  .grid span { color: var(--muted); }
+  .grid b { font-weight: 600; text-align: right; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+  .row > div { flex: 1 1 180px; }
+  select, input[type=text], textarea { width: 100%; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
+  textarea { min-height: 92px; resize: vertical; font-size: 14px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  output { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  audio { width: 100%; margin-top: 12px; }
+  a.dl { display: none; font-size: 13px; color: var(--accent); margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.txt { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  #log { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
+  #log .ok { color: var(--ok); } #log .warn { color: var(--warn); } #log .err { color: var(--err); }
+  .hint { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+  code { background: color-mix(in srgb, var(--muted) 14%, transparent); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Piper im Browser – Spike</h1>
+  <p class="sub">Läuft <code>de_DE-thorsten-medium</code> ohne Backend? Lassen sich
+     <code>sid</code> und <code>length_scale</code> steuern? Und wie schnell ist es?</p>
+
+  <section>
+    <h2>Umgebung</h2>
+    <div class="grid" id="env"></div>
+  </section>
+
+  <section>
+    <h2>Modell</h2>
+    <div class="row">
+      <div style="flex: 2 1 320px;">
+        <label for="voice">Stimme aus <code>voices/</code></label>
+        <select id="voice"></select>
+      </div>
+      <div>
+        <label for="ep">Execution Provider <span style="opacity:.6">(WebGPU: siehe README)</span></label>
+        <select id="ep">
+          <option value="wasm">wasm (CPU)</option>
+        </select>
+      </div>
+      <div>
+        <label for="threads">Threads <output id="threadsOut"></output></label>
+        <input type="range" id="threads" min="1" max="8" step="1" value="4">
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button id="load">Laden</button>
+      </div>
+    </div>
+    <p class="hint">Das Modell kommt vom lokalen Server, nichts wird aus dem Netz geholt.
+       Erster Aufruf lädt zusätzlich 18 MB espeak-ng-Daten.</p>
+  </section>
+
+  <section>
+    <h2>Einzeltest</h2>
+    <label for="text">Text</label>
+    <textarea id="text">HUGO: Guten Abend, Frau Nachbarin. Sie sehen bezaubernd aus heute. Und Sie glauben wirklich, dass sich das so einfach regeln lässt?</textarea>
+
+    <div class="row" style="margin-top: 12px;">
+      <div>
+        <label for="length">length_scale (Tempo) <output id="lengthOut"></output></label>
+        <input type="range" id="length" min="0.5" max="2" step="0.05" value="1">
+      </div>
+      <div>
+        <label for="noise">noise_scale <output id="noiseOut"></output></label>
+        <input type="range" id="noise" min="0" max="1" step="0.001" value="0.667">
+      </div>
+      <div>
+        <label for="noisew">noise_w <output id="noisewOut"></output></label>
+        <input type="range" id="noisew" min="0" max="1" step="0.001" value="0.8">
+      </div>
+    </div>
+
+    <div class="row" id="sidRow" style="display: none;">
+      <div>
+        <label for="sid">Sprecher-ID <output id="sidOut"></output> <span style="opacity:.6">(<span id="sidMax"></span>)</span></label>
+        <input type="range" id="sid" min="0" max="0" step="1" value="0">
+      </div>
+    </div>
+
+    <div class="row">
+      <div style="flex: 0 0 auto;">
+        <label><input type="checkbox" id="split" checked> Sätze einzeln synthetisieren (wie Piper)</label>
+        <label><input type="checkbox" id="normalize" checked> je Satz normalisieren (wie Piper ohne <code>--no-normalize</code>)</label>
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button id="run" disabled>Sprechen</button>
+      </div>
+    </div>
+
+    <audio id="player" controls></audio>
+    <a class="dl" id="download" href="#">WAV herunterladen</a>
+  </section>
+
+  <section>
+    <h2>Benchmark</h2>
+    <p class="hint" style="margin-top:0">Zehn Blöcke von „Ja.“ bis zur langen Erzählpassage,
+       nach einem Aufwärmlauf. Zum Vergleich: das Go-Backend braucht laut README 1–3 s je Block.</p>
+    <div class="row" style="margin-top:12px">
+      <div style="flex: 0 0 auto;"><button id="bench" class="ghost" disabled>Benchmark starten</button></div>
+    </div>
+    <div id="summaryBox" style="display:none">
+      <div class="grid" id="summary"></div>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Text</th><th class="num">Zeichen</th><th class="num">Ton s</th>
+          <th class="num">Phoneme ms</th><th class="num">Inferenz ms</th><th class="num">RTF</th>
+        </tr></thead>
+        <tbody id="results"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Protokoll</h2>
+    <div id="log"></div>
+  </section>
+
+</div>
+
+<script src="vendor/ort.wasm.min.js"></script>
+<script src="vendor/piper_phonemize.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

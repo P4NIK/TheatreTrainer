@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react'
-import { AppShell, Group, Text, Anchor } from '@mantine/core'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { AppShell, Anchor, Group, Loader, Text } from '@mantine/core'
 import { IconMasksTheater } from '@tabler/icons-react'
 
 import ProjectsPage from './pages/ProjectsPage'
-import EditorPage from './pages/EditorPage'
+
+/**
+ * Der Editor wird nachgeladen.
+ *
+ * An ihm hängt pdf.js, und das ist der größte Brocken der Anwendung. Wer die
+ * Seite aufruft, sieht aber erst einmal seine Stückeliste – und die soll sofort
+ * dastehen. Geholt wird der Editor beim Öffnen eines Stücks, was ohnehin einen
+ * Wimpernschlag dauert.
+ */
+const EditorPage = lazy(() => import('./pages/EditorPage'))
 
 /**
  * Minimal hash based routing – the app has exactly two screens, so a router
@@ -46,11 +55,19 @@ export default function App() {
       </AppShell.Header>
 
       <AppShell.Main>
-        {projectId ? (
-          <EditorPage projectId={projectId} onBack={goHome} />
-        ) : (
-          <ProjectsPage onOpen={(id) => (window.location.hash = `#/p/${encodeURIComponent(id)}`)} />
-        )}
+        <Suspense
+          fallback={
+            <Group justify="center" py="xl">
+              <Loader />
+            </Group>
+          }
+        >
+          {projectId ? (
+            <EditorPage projectId={projectId} onBack={goHome} />
+          ) : (
+            <ProjectsPage onOpen={(id) => (window.location.hash = `#/p/${encodeURIComponent(id)}`)} />
+          )}
+        </Suspense>
       </AppShell.Main>
     </AppShell>
   )

@@ -28,7 +28,6 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconCards, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
 
-import { api } from '../../api/client'
 
 import { speakerNames } from '../../lib/blocks'
 import {
@@ -47,6 +46,7 @@ import {
   type DeckFilter,
 } from '../../lib/cards'
 import { upcomingBlockIDs, type Step } from '../../lib/rehearsal'
+import { store } from '../../lib/store'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
 import {
   DIRECTION_KEY,
@@ -57,11 +57,11 @@ import {
   type Grade,
   type Project,
   type Speakers,
-  type SttInfo,
 } from '../../types'
 import SelectionCard from '../SynthesizePanel/SelectionCard'
 import RehearsalRun, { type RunOptions } from './RehearsalRun'
 import { useBlockAudio } from './useBlockAudio'
+import { sttHint, useStt } from './useStt'
 
 /** One colour per Leitner box, from "just started" to "sits". */
 const BOX_COLORS = ['red', 'orange', 'yellow', 'lime', 'teal', 'green']
@@ -113,7 +113,7 @@ export default function CardsPanel({
 
   const [cards, setCards] = useState<Deck>({})
   const [loading, setLoading] = useState(true)
-  const [stt, setStt] = useState<SttInfo | null>(null)
+  const stt = useStt()
   const [running, setRunning] = useState(false)
   const [starting, setStarting] = useState(false)
   const [preparing, setPreparing] = useState<number | null>(null)
@@ -122,11 +122,11 @@ export default function CardsPanel({
   const [steps, setSteps] = useState<Step[]>([])
   const [tally, setTally] = useState<Tally>(NO_GRADES)
 
-  const audio = useBlockAudio(project.id)
+  const audio = useBlockAudio(project, blocks, speakers)
 
   useEffect(() => {
     let cancelled = false
-    api
+    store
       .getCards(project.id)
       .then((d) => !cancelled && setCards(d))
       .catch(() => undefined)
@@ -135,10 +135,6 @@ export default function CardsPanel({
       cancelled = true
     }
   }, [project.id])
-
-  useEffect(() => {
-    api.sttInfo().then(setStt).catch(() => setStt(null))
-  }, [])
 
   const roles = useMemo(() => speakerNames(blocks), [blocks])
   const ordered = useMemo(() => [...blocks].sort((a, b) => a.order - b.order), [blocks])
@@ -195,7 +191,7 @@ export default function CardsPanel({
     (blockId: string, grade: Grade, at: number) => {
       const next: CardState = review(cards[blockId], grade, new Date(), project.premiere)
       setCards((d) => ({ ...d, [blockId]: next }))
-      api
+      store
         .saveCards(project.id, { [blockId]: next })
         .then(setCards)
         .catch(() => undefined)
@@ -234,7 +230,7 @@ export default function CardsPanel({
   }
 
   const resetDeck = () => {
-    api
+    store
       .clearCards(project.id)
       .then(() => setCards({}))
       .catch(() => undefined)
@@ -244,7 +240,6 @@ export default function CardsPanel({
     const graded = tally.again + tally.hard + tally.good
     return (
       <RehearsalRun
-        projectId={project.id}
         steps={steps}
         role={role}
         options={options}
@@ -475,15 +470,18 @@ export default function CardsPanel({
           />
           <Switch
             checked={options.analyze}
-            onChange={(e) => set('analyze', e.currentTarget.checked)}
+            onChange={(e) => {
+              const an = e.currentTarget.checked
+              set('analyze', an)
+              // Lieber jetzt laden, mit Fortschritt, als bei der ersten Replik.
+              if (an) stt.load()
+            }}
             label="Gesagtes auswerten"
-            disabled={!options.record || !stt?.available}
+            disabled={!options.record}
             description={
               !options.record
                 ? 'Braucht den Mitschnitt – erst den Schalter darüber einschalten.'
-                : stt?.available
-                  ? 'Der Wort-für-Wort-Vergleich wählt einen der drei Knöpfe vor. Entscheiden tust du: die Erkennung verhört sich zu oft, um über den Stapel zu bestimmen.'
-                  : 'Keine lokale Spracherkennung gefunden – siehe README, Abschnitt Lernmodus.'
+                : `${sttHint(stt)} Der Vergleich wählt einen der drei Knöpfe vor; entscheiden tust du – die Erkennung verhört sich zu oft, um über den Stapel zu bestimmen.`
             }
           />
         </Stack>

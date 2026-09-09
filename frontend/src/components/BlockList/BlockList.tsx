@@ -29,9 +29,11 @@ import { IconGripVertical, IconPencil, IconPlayerPlay, IconTrash } from '@tabler
 import { notifications } from '@mantine/notifications'
 import { useRef, useState } from 'react'
 
-import { api } from '../../api/client'
 
+import { encodeWav } from '../../lib/audio'
 import { blockColor, renumber, splitParens } from '../../lib/blocks'
+import { engineFor } from '../../lib/engine'
+import { requestFor } from '../../lib/pipeline'
 import type { Block, Speakers } from '../../types'
 
 interface Props {
@@ -70,18 +72,21 @@ export default function BlockList({
   const play = async (id: string) => {
     setPlaying(id)
     try {
-      const res = await fetch(api.blockAudioUrl(projectId, id))
-      if (!res.ok) {
-        let message = `${res.status} ${res.statusText}`
-        try {
-          const body = await res.json()
-          if (body?.error) message = body.error
-        } catch {
-          /* keep the status text */
-        }
-        throw new Error(message)
-      }
-      const url = URL.createObjectURL(await res.blob())
+      const block = blocks.find((b) => b.id === id)
+      if (!block) throw new Error('Diesen Block gibt es nicht mehr')
+
+      // The own role plays no part here: nothing is skipped, whoever presses
+      // play wants to hear this one block.
+      const { request, ok } = requestFor(block, { myRole: '' }, speakers, {
+        skipMyRole: false,
+        includeDirections: true,
+      })
+      if (!ok || !request) throw new Error('Für diesen Block ist keine Stimme konfiguriert')
+
+      const rendered = await engineFor(projectId).render(request)
+      const url = URL.createObjectURL(
+        new Blob([encodeWav(rendered.samples, rendered.sampleRate)], { type: 'audio/wav' }),
+      )
       audioRef.current?.pause()
       const audio = new Audio(url)
       audioRef.current = audio

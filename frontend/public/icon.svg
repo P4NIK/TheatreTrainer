@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Theater-Vorleser">
+  <rect width="512" height="512" rx="112" fill="#4c6ef5"/>
+  <!-- Vorhang: zwei Bahnen, dazwischen die Bühne -->
+  <g fill="#fff">
+    <path d="M96 96h72c0 96-24 112-24 160s24 64 24 160H96z" opacity=".95"/>
+    <path d="M416 96h-72c0 96 24 112 24 160s-24 64-24 160h72z" opacity=".95"/>
+    <rect x="184" y="96" width="144" height="34" rx="17" opacity=".95"/>
+  </g>
+  <!-- Schallwellen von der Bühne her -->
+  <g fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" opacity=".9">
+    <path d="M232 288a48 48 0 0 1 0-64"/>
+    <path d="M280 320a96 96 0 0 0 0-128"/>
+  </g>
+</svg>

@@ -24,7 +24,6 @@ import {
   IconWand,
 } from '@tabler/icons-react'
 
-import { api } from '../api/client'
 import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
@@ -40,7 +39,9 @@ import {
   speakerNames,
   syncSpeakers,
 } from '../lib/blocks'
+import { closeOtherEngines } from '../lib/engine'
 import { guessSpeaker } from '../lib/pdfText'
+import { store } from '../lib/store'
 import type { Block, Project, Rect, Speakers } from '../types'
 
 interface Props {
@@ -49,6 +50,39 @@ interface Props {
 }
 
 const AUTOSAVE_MS = 1200
+
+/**
+ * The PDF as something the viewer can open.
+ *
+ * It used to be an address on the server; now it is a file in this browser,
+ * so it has to be turned into a blob URL once and let go of when the play is
+ * closed – otherwise every visit leaves a few megabytes behind.
+ */
+function usePdfUrl(projectId: string, onError: (message: string) => void): string | null {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let made = ''
+    store
+      .getPdfBlob(projectId)
+      .then((blob) => {
+        if (cancelled) return
+        made = URL.createObjectURL(blob)
+        setUrl(made)
+      })
+      // Without this the page would wait for a file that is not coming.
+      .catch((e: Error) => onError(e.message))
+
+    return () => {
+      cancelled = true
+      setUrl(null)
+      if (made) URL.revokeObjectURL(made)
+    }
+  }, [projectId, onError])
+
+  return url
+}
 
 export default function EditorPage({ projectId, onBack }: Props) {
   const [project, setProject] = useState<Project | null>(null)
@@ -62,6 +96,14 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const [draft, setDraft] = useState<{ block: Block; isNew: boolean } | null>(null)
   const [detectOpen, setDetectOpen] = useState(false)
 
+  const pdfUrl = usePdfUrl(projectId, setLoadError)
+
+  // One play at a time: the worker of another one would go on holding its
+  // 63 MB of voice for nothing.
+  useEffect(() => {
+    closeOtherEngines(projectId)
+  }, [projectId])
+
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const loaded = useRef(false)
@@ -72,9 +114,9 @@ export default function EditorPage({ projectId, onBack }: Props) {
     let cancelled = false
     loaded.current = false
     Promise.all([
-      api.getProject(projectId),
-      api.getBlocks(projectId),
-      api.getSpeakers(projectId),
+      store.getProject(projectId),
+      store.getBlocks(projectId),
+      store.getSpeakers(projectId),
     ])
       .then(([p, b, s]) => {
         if (cancelled) return
@@ -95,8 +137,8 @@ export default function EditorPage({ projectId, onBack }: Props) {
     if (!loaded.current) return
     setSaving(true)
     try {
-      await api.saveBlocks(projectId, blocks)
-      await api.saveSpeakers(projectId, speakers)
+      await store.saveBlocks(projectId, blocks)
+      await store.saveSpeakers(projectId, speakers)
       setDirty(false)
     } catch (e) {
       notifications.show({ color: 'red', title: 'Speichern fehlgeschlagen', message: (e as Error).message })
@@ -187,7 +229,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
     (n: number) => {
       setProject((p) => {
         if (p && p.pageCount !== n) {
-          void api.updateProject(projectId, { pageCount: n }).catch(() => undefined)
+          void store.updateProject(projectId, { pageCount: n }).catch(() => undefined)
           return { ...p, pageCount: n }
         }
         return p
@@ -200,7 +242,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const setPremiere = (premiere: string) => {
     if (!project) return
     setProject({ ...project, premiere })
-    api
+    store
       .updateProject(projectId, { premiere })
       .catch((e) =>
         notifications.show({
@@ -214,7 +256,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const setMyRole = (role: string) => {
     if (!project) return
     setProject({ ...project, myRole: role })
-    api
+    store
       .updateProject(projectId, { myRole: role })
       .catch((e) =>
         notifications.show({ color: 'red', title: 'Rolle konnte nicht gespeichert werden', message: (e as Error).message }),
@@ -252,7 +294,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
     )
   }
 
-  if (!project) {
+  if (!project || !pdfUrl) {
     return (
       <Group justify="center" py="xl">
         <Loader />
@@ -330,7 +372,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
             }}
           >
             <PdfCanvasEditor
-              fileUrl={api.pdfUrl(projectId)}
+              fileUrl={pdfUrl}
               blocks={blocks}
               speakers={speakers}
               page={page}
@@ -358,6 +400,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
 
         <Tabs.Panel value="speakers">
           <SpeakerConfig
+            projectId={project.id}
             blocks={blocks}
             speakers={speakers}
             onChange={mutateSpeakers}
@@ -400,7 +443,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
       <AutoDetectModal
         opened={detectOpen}
         onClose={() => setDetectOpen(false)}
-        fileUrl={api.pdfUrl(projectId)}
+        fileUrl={pdfUrl}
         currentPage={page}
         existing={blocks}
         onApply={addDetected}

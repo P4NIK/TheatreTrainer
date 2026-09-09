@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -14,22 +14,15 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconDatabase, IconDownload, IconPlayerPlay } from '@tabler/icons-react'
 
-import { ApiError, api } from '../../api/client'
 import {
   buildSelection,
   defaultSelection,
   selectionSuffix,
   type SelectionSettings,
 } from '../../lib/selection'
-import {
-  DIRECTION_KEY,
-  type Block,
-  type CacheStatus,
-  type Job,
-  type Project,
-  type Speakers,
-} from '../../types'
+import { DIRECTION_KEY, type Block, type Project, type Speakers } from '../../types'
 import SelectionCard from './SelectionCard'
+import { useSynthesis } from './useSynthesis'
 
 interface Props {
   project: Project
@@ -46,28 +39,12 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
     ...defaultSelection,
     toPage: Math.max(1, project.pageCount),
   })
-  const [job, setJob] = useState<Job | null>(null)
-  /** Suffix of the run that produced `job` – the settings may change afterwards. */
-  const [jobSuffix, setJobSuffix] = useState('')
-  const [starting, setStarting] = useState(false)
-  const [problems, setProblems] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [cache, setCache] = useState<CacheStatus | null>(null)
-  const timer = useRef<number | null>(null)
-
-  const refreshCache = useCallback(() => {
-    api.cacheStatus(project.id).then(setCache).catch(() => setCache(null))
-  }, [project.id])
-
-  useEffect(() => {
-    refreshCache()
-  }, [refreshCache])
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) window.clearInterval(timer.current)
-    }
-  }, [])
+  // The run happens in this tab now; the hook holds what used to be a job.
+  const { state, cache, start: startRun, cancel, clearCache } = useSynthesis(project, blocks, speakers)
+  /** Suffix of the run that produced the audio – the settings may change afterwards. */
+  const [suffix, setSuffix] = useState('')
+  /** Only for a failed save; everything about the run itself is in `state`. */
+  const [saveError, setSaveError] = useState('')
 
   const picked = useMemo(
     () => buildSelection(blocks, project, selection),
@@ -90,54 +67,30 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
     return [...need].filter((k) => !speakers[k]?.model)
   })()
 
-  const poll = (jobId: string) => {
-    if (timer.current) window.clearInterval(timer.current)
-    timer.current = window.setInterval(async () => {
-      try {
-        const j = await api.jobStatus(project.id, jobId)
-        setJob(j)
-        if (j.status === 'done' || j.status === 'error') {
-          if (timer.current) window.clearInterval(timer.current)
-          timer.current = null
-          refreshCache()
-        }
-      } catch (e) {
-        setError((e as Error).message)
-        if (timer.current) window.clearInterval(timer.current)
-        timer.current = null
-      }
-    }, 1000)
-  }
-
   const start = async () => {
-    setStarting(true)
-    setProblems([])
-    setError(null)
+    setSaveError('')
     try {
       await onBeforeStart()
-      const j = await api.startSynthesis(project.id, {
-        skipMyRole,
-        includeDirections,
-        // The whole play goes as an empty selection – the server then simply
-        // takes every block in order.
-        selection: selection.mode === 'all' ? undefined : picked.items,
-      })
-      setJobSuffix(selectionSuffix(selection))
-      setJob(j)
-      poll(j.id)
     } catch (e) {
-      if (e instanceof ApiError && e.problems?.length) {
-        setProblems(e.problems)
-      } else {
-        setError((e as Error).message)
-      }
-    } finally {
-      setStarting(false)
+      setSaveError((e as Error).message)
+      return
     }
+    setSuffix(selectionSuffix(selection))
+    await startRun({
+      skipMyRole,
+      includeDirections,
+      // The whole play goes as an empty selection – then simply every block
+      // in order.
+      selection: selection.mode === 'all' ? undefined : picked.items,
+    })
   }
 
-  const running = job?.status === 'pending' || job?.status === 'running'
-  const percent = job && job.total > 0 ? Math.round((job.done / job.total) * 100) : 0
+  const running = state.status === 'running' || state.status === 'voice'
+  const percent = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0
+  const voicePercent =
+    state.voice && state.voice.total > 0
+      ? Math.round((state.voice.loaded / state.voice.total) * 100)
+      : 0
 
   return (
     <Stack maw={720}>
@@ -210,10 +163,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
                 size="compact-xs"
                 variant="subtle"
                 color="gray"
-                onClick={async () => {
-                  await api.clearCache(project.id).catch(() => undefined)
-                  refreshCache()
-                }}
+                onClick={() => void clearCache()}
               >
                 leeren
               </Button>
@@ -224,17 +174,13 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
             <Button
               leftSection={<IconPlayerPlay size={18} />}
               onClick={start}
-              loading={starting || running}
+              loading={running}
               disabled={lines.length === 0 && directions.length === 0}
             >
               Audio erzeugen
             </Button>
-            {running && job && (
-              <Button
-                variant="subtle"
-                color="red"
-                onClick={() => api.cancelJob(project.id, job.id).catch(() => undefined)}
-              >
+            {running && (
+              <Button variant="subtle" color="red" onClick={cancel}>
                 Abbrechen
               </Button>
             )}
@@ -242,67 +188,73 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
         </Stack>
       </Card>
 
-      {problems.length > 0 && (
+      {state.problems.length > 0 && (
         <Alert color="red" title="Es fehlen noch Zuordnungen">
           <List size="sm">
-            {problems.map((p) => (
+            {state.problems.map((p) => (
               <List.Item key={p}>{p}</List.Item>
             ))}
           </List>
         </Alert>
       )}
 
-      {error && (
+      {saveError && (
         <Alert color="red" title="Fehler">
-          {error}
+          {saveError}
         </Alert>
       )}
 
-      {job && (
+      {state.status !== 'idle' && (
         <Card withBorder padding="md">
           <Stack gap="xs">
             <Group justify="space-between">
               <Text size="sm" fw={600}>
-                {job.status === 'done'
+                {state.status === 'done'
                   ? 'Fertig'
-                  : job.status === 'error'
+                  : state.status === 'error'
                     ? 'Abgebrochen'
-                    : 'Synthese läuft'}
+                    : state.status === 'voice'
+                      ? 'Stimme wird geladen'
+                      : 'Synthese läuft'}
               </Text>
               <Text size="xs" c="dimmed">
-                {job.done}/{job.total}
+                {state.status === 'voice' && state.voice
+                  ? `${formatBytes(state.voice.loaded)}${state.voice.total ? ` von ${formatBytes(state.voice.total)}` : ''}`
+                  : `${state.done}/${state.total}`}
               </Text>
             </Group>
             <Progress
-              value={job.status === 'done' ? 100 : percent}
+              value={
+                state.status === 'done' ? 100 : state.status === 'voice' ? voicePercent : percent
+              }
               animated={running}
-              color={job.status === 'error' ? 'red' : undefined}
+              color={state.error ? 'red' : undefined}
             />
             <Text size="xs" c="dimmed">
-              {job.message}
+              {state.message}
             </Text>
 
-            {job.status === 'error' && (
+            {state.error && (
               <Alert color="red" title="Synthese fehlgeschlagen">
                 <Text size="xs" style={{ whiteSpace: 'pre-wrap' }}>
-                  {job.error}
+                  {state.error}
                 </Text>
               </Alert>
             )}
 
-            {job.status === 'done' && (
+            {state.status === 'done' && state.url && (
               <Stack gap="xs">
                 {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio controls style={{ width: '100%' }} src={api.audioUrl(project.id, job.id)} />
+                <audio controls style={{ width: '100%' }} src={state.url} />
                 <Group>
                   <Button
                     component="a"
-                    href={api.audioUrl(project.id, job.id)}
-                    download={`${project.id}${jobSuffix}.${job.format ?? 'wav'}`}
+                    href={state.url}
+                    download={`${project.id}${suffix}.wav`}
                     variant="light"
                     leftSection={<IconDownload size={16} />}
                   >
-                    Herunterladen ({(job.format ?? 'wav').toUpperCase()})
+                    Herunterladen (WAV)
                   </Button>
                 </Group>
               </Stack>

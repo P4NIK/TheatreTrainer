@@ -3,10 +3,9 @@ import {
   ActionIcon,
   Alert,
   Badge,
-  Button,
   ColorInput,
   Group,
-  Loader,
+  Progress,
   Radio,
   Select,
   Slider,
@@ -16,13 +15,17 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconAlertTriangle, IconPlayerPlay, IconVolume } from '@tabler/icons-react'
+import { IconDownload, IconPlayerPlay } from '@tabler/icons-react'
 
-import { api } from '../../api/client'
+import { encodeWav } from '../../lib/audio'
 import { speakerNames } from '../../lib/blocks'
-import { DIRECTION_KEY, type Block, type Speakers, type VoicesResponse } from '../../types'
+import { engineFor } from '../../lib/engine'
+import { VOICES, voiceReady } from '../../lib/voices'
+import { DIRECTION_KEY, type Block, type Speakers } from '../../types'
 
 interface Props {
+  /** The engine is per project – the preview shares it with the run. */
+  projectId: string
   blocks: Block[]
   speakers: Speakers
   onChange: (speakers: Speakers) => void
@@ -32,17 +35,41 @@ interface Props {
 
 const SAMPLE_TEXT = 'Guten Abend. Dies ist eine Hörprobe für die Theaterprobe.'
 
-export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMyRoleChange }: Props) {
-  const [voices, setVoices] = useState<VoicesResponse | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+export default function SpeakerConfig({
+  projectId,
+  blocks,
+  speakers,
+  onChange,
+  myRole,
+  onMyRoleChange,
+}: Props) {
   const [previewing, setPreviewing] = useState<string | null>(null)
+  const [download, setDownload] = useState<{ loaded: number; total: number } | null>(null)
+  const [stored, setStored] = useState<string[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const urlRef = useRef('')
+
+  const engine = engineFor(projectId)
+
+  // Which voices are already in the browser – so the first preview does not
+  // surprise anyone with a 63 MB download.
+  useEffect(() => {
+    let alive = true
+    Promise.all(
+      VOICES.map(async (voice) => ((await voiceReady(engine.models, voice.name)) ? voice.name : '')),
+    ).then((names) => {
+      if (alive) setStored(names.filter(Boolean))
+    })
+    return () => {
+      alive = false
+    }
+  }, [engine, previewing])
 
   useEffect(() => {
-    api
-      .listVoices()
-      .then(setVoices)
-      .catch((e) => setLoadError((e as Error).message))
+    return () => {
+      audioRef.current?.pause()
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    }
   }, [])
 
   const names = useMemo(() => speakerNames(blocks), [blocks])
@@ -52,10 +79,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
     return [...keys].sort((a, b) => a.localeCompare(b, 'de'))
   }, [names, speakers])
 
-  const voiceOptions = (voices?.voices ?? []).map((v) => ({
-    value: v.name,
-    label: `${v.name}${v.numSpeakers > 1 ? ` (${v.numSpeakers} Stimmen)` : ''}`,
-  }))
+  const voiceOptions = VOICES.map((voice) => ({ value: voice.name, label: voice.label }))
 
   const update = (key: string, patch: Partial<Speakers[string]>) => {
     const current = speakers[key] ?? {
@@ -69,30 +93,55 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
     onChange({ ...speakers, [key]: { ...current, ...patch } })
   }
 
+  /**
+   * The sample is rendered the same way a block is – same worker, same cache.
+   * So the first one costs a second and every later one is instant, including
+   * after a change to volume or pitch: those are not part of the cache key.
+   *
+   * The backend deliberately went around the cache here, because a preview
+   * text is ad hoc. This one is not: it is the same sentence every time, so it
+   * costs one entry per voice and tempo, and `tidyCache()` clears it after the
+   * next run. In exchange, dragging a slider and pressing play again is
+   * instant – which is exactly what one does on this screen.
+   */
   const preview = async (key: string) => {
     const cfg = speakers[key]
     if (!cfg?.model) {
-      notifications.show({ color: 'yellow', message: 'Bitte zuerst ein Stimm-Modell auswählen.' })
+      notifications.show({ color: 'yellow', message: 'Bitte zuerst eine Stimme auswählen.' })
       return
     }
+
     setPreviewing(key)
+    const unwatch = engine.watchVoice((progress) =>
+      setDownload({ loaded: progress.loaded, total: progress.total }),
+    )
     try {
-      const url = await api.previewVoice({
+      const block = await engine.render({
+        text: SAMPLE_TEXT,
         model: cfg.model,
         speakerId: cfg.speakerId,
         lengthScale: cfg.lengthScale || 1,
         volume: cfg.volume || 1,
         pitch: cfg.pitch || 1,
-        text: SAMPLE_TEXT,
       })
+
       audioRef.current?.pause()
-      const audio = new Audio(url)
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+      urlRef.current = URL.createObjectURL(
+        new Blob([encodeWav(block.samples, block.sampleRate)], { type: 'audio/wav' }),
+      )
+      const audio = new Audio(urlRef.current)
       audioRef.current = audio
-      audio.onended = () => URL.revokeObjectURL(url)
       await audio.play()
     } catch (e) {
-      notifications.show({ color: 'red', title: 'Hörprobe fehlgeschlagen', message: (e as Error).message })
+      notifications.show({
+        color: 'red',
+        title: 'Hörprobe fehlgeschlagen',
+        message: (e as Error).message,
+      })
     } finally {
+      unwatch()
+      setDownload(null)
       setPreviewing(null)
     }
   }
@@ -106,12 +155,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
       pitch: 1,
       color: isDirection ? '#868e96' : '#4A90D9',
     }
-    const voice = voices?.voices.find((v) => v.name === cfg.model)
-    const speakerIdOptions = voice?.speakerIds
-      ? Object.entries(voice.speakerIds)
-          .sort((a, b) => a[1] - b[1])
-          .map(([n, id]) => ({ value: String(id), label: `${id} – ${n}` }))
-      : []
+    const known = VOICES.some((voice) => voice.name === cfg.model)
 
     return (
       <Table.Tr key={key}>
@@ -132,33 +176,24 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
         </Table.Td>
 
         <Table.Td>
-          <Select
-            size="xs"
-            placeholder={voiceOptions.length ? 'Stimme wählen' : 'keine Modelle gefunden'}
-            data={voiceOptions}
-            value={cfg.model || null}
-            onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
-            searchable
-            clearable
-            disabled={voiceOptions.length === 0}
-            w={230}
-          />
-        </Table.Td>
-
-        <Table.Td>
-          {speakerIdOptions.length > 0 ? (
+          <Stack gap={2}>
             <Select
               size="xs"
-              data={speakerIdOptions}
-              value={String(cfg.speakerId)}
-              onChange={(v) => update(key, { speakerId: Number(v ?? 0) })}
-              w={130}
+              placeholder="Stimme wählen"
+              data={voiceOptions}
+              value={known ? cfg.model : null}
+              onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
+              clearable
+              w={230}
             />
-          ) : (
-            <Text size="xs" c="dimmed">
-              –
-            </Text>
-          )}
+            {/* Older projects may still point at a voice from the days of the
+                voices/ folder. Saying so is friendlier than an empty field. */}
+            {cfg.model !== '' && !known && (
+              <Text size="xs" c="red">
+                „{cfg.model}“ gibt es nicht mehr – bitte neu wählen.
+              </Text>
+            )}
+          </Stack>
         </Table.Td>
 
         <Table.Td w={150}>
@@ -230,7 +265,7 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
               variant="light"
               onClick={() => preview(key)}
               loading={previewing === key}
-              disabled={!cfg.model || !voices?.piperAvailable}
+              disabled={!cfg.model || previewing !== null}
             >
               <IconPlayerPlay size={16} />
             </ActionIcon>
@@ -240,70 +275,40 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
     )
   }
 
-  if (loadError) {
-    return <Alert color="red" title="Stimmen konnten nicht geladen werden">{loadError}</Alert>
-  }
-  if (!voices) {
-    return (
-      <Group justify="center" p="xl">
-        <Loader />
-      </Group>
-    )
-  }
+  const missing = VOICES.filter((voice) => !stored.includes(voice.name))
 
   return (
     <Stack>
-      {!voices.piperAvailable && (
-        <Alert color="orange" icon={<IconAlertTriangle size={18} />} title="Piper nicht gefunden">
-          <Stack gap={6}>
-            <Text size="sm">
-              Hörproben und Synthese sind deaktiviert. Getestet wurde:{' '}
-              {(voices.piper?.tried ?? ['piper']).map((t, i) => (
-                <span key={t}>
-                  {i > 0 && ', '}
-                  <code>{t}</code>
-                </span>
-              ))}
-              .
-            </Text>
-            {voices.piper?.explicit && (
-              <Text size="xs">
-                <code>PIPER_BIN</code> ist gesetzt – dadurch wird nur dieser Befehl geprüft. Setze
-                die Variable auf einen funktionierenden Aufruf oder entferne sie, damit die
-                automatische Suche greift.
-              </Text>
-            )}
-            {voices.piper?.detail && (
-              <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-wrap' }}>
-                {voices.piper.detail}
-              </Text>
-            )}
-            <Text size="xs">
-              Falls Piper über <code>pip install piper-tts</code> installiert ist, prüfe im selben
-              Terminal <code>python -m piper --help</code>. Danach unten „Stimmen neu einlesen“
-              drücken – ein Neustart des Servers ist nicht nötig.
-            </Text>
-          </Stack>
-        </Alert>
-      )}
-      {voices.piperAvailable && voices.piper?.command && (
-        <Text size="xs" c="dimmed">
-          Piper-Aufruf: <code>{voices.piper.command}</code>
-        </Text>
-      )}
-      {voices.voices.length === 0 && (
-        <Alert color="yellow" icon={<IconVolume size={18} />} title="Keine Stimm-Modelle gefunden">
-          Lege Piper-Modelle (<code>*.onnx</code> + <code>*.onnx.json</code>) in den Ordner{' '}
-          <code>{voices.dir}</code>. Die Liste aktualisiert sich beim nächsten Laden der Seite.
+      {missing.length > 0 && (
+        <Alert color="blue" icon={<IconDownload size={18} />} variant="light">
+          <Text size="sm">
+            {missing.map((v) => v.label).join(', ')} wird beim ersten Vorlesen einmal geladen (
+            {missing.map((v) => `${Math.round(v.bytes / 1024 / 1024)} MB`).join(', ')}) und bleibt
+            danach im Browser – auch ohne Internet.
+          </Text>
         </Alert>
       )}
 
-      <Table.ScrollContainer minWidth={1150}>
+      {download && (
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">
+            Stimme wird geladen …{' '}
+            {download.total > 0
+              ? `${Math.round((download.loaded / download.total) * 100)} %`
+              : `${Math.round(download.loaded / 1024 / 1024)} MB`}
+          </Text>
+          <Progress
+            value={download.total > 0 ? (download.loaded / download.total) * 100 : 0}
+            animated
+          />
+        </Stack>
+      )}
+
+      <Table.ScrollContainer minWidth={1050}>
         <Table verticalSpacing="xs" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Sprecher</Table.Th>
-              <Table.Th>Stimm-Modell</Table.Th>
               <Table.Th>Stimme</Table.Th>
               <Table.Th>Tempo</Table.Th>
               <Table.Th>Tonhöhe</Table.Th>
@@ -326,15 +331,11 @@ export default function SpeakerConfig({ blocks, speakers, onChange, myRole, onMy
         </Text>
       )}
 
-      <Group>
-        <Button
-          variant="subtle"
-          size="xs"
-          onClick={() => api.listVoices().then(setVoices).catch(() => undefined)}
-        >
-          Stimmen neu einlesen
-        </Button>
-      </Group>
+      <Text size="xs" c="dimmed">
+        Alle Rollen teilen sich eine Stimme; unterschieden werden sie über Tonhöhe und Tempo. Das
+        klingt besser als eine zweite, schlechtere Stimme – und die Regler kosten nichts, weil nur
+        der Text neu erzeugt wird, nicht die Bearbeitung.
+      </Text>
     </Stack>
   )
 }

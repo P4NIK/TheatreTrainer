@@ -13,6 +13,8 @@
  * differently, or it is missing. A rehearsal aid, not a verdict.
  */
 
+import { numberValue } from './numbers'
+
 export type WordState =
   /** Word for word what the book says. */
   | 'ok'
@@ -182,10 +184,21 @@ export function cologne(word: string): string {
 /**
  * Two words count as the same when they are one or two typing mistakes apart,
  * or when they sound alike. Short words get no tolerance – "der" and "den"
- * are one step apart and mean different things.
+ * are one step apart and mean different things. Numbers are the exception:
+ * they are compared by value, see numbers.ts.
  */
 export function related(a: string, b: string): boolean {
   if (a === b) return true
+
+  // Numbers are decided on their value, and that verdict is final. The book
+  // writes "neunundzwanziger" where the recogniser writes "29er" - no edit
+  // distance and no phonetic code can bridge that, because cologne() drops
+  // digits before it starts. The same test keeps "20er" and "29er" apart:
+  // one typing mistake, one identical Cologne code, and two different years.
+  const numberA = numberValue(a)
+  const numberB = numberValue(b)
+  if (numberA !== null && numberB !== null) return numberA === numberB
+
   const shortest = Math.min(a.length, b.length)
   const longest = Math.max(a.length, b.length)
   const limit = shortest <= 3 ? 0 : longest <= 6 ? 1 : 2

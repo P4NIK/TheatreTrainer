@@ -1,21 +1,14 @@
-# Nutzerdaten: PDFs können urheberrechtlich geschützt sein, Audio ist groß.
-/data/*
-!/data/.gitkeep
-
-# Piper-Stimmmodelle sind mehrere hundert MB groß und gehören nicht ins Repo.
-/voices/*
-!/voices/.gitkeep
+# Reste aus der Zeit mit Server: data/ enthielt die Stücke, voices/ die
+# Stimmmodelle. Beides liegt jetzt im Browser. Die Ordner bleiben ignoriert,
+# solange sie noch auf Platten liegen – löschen kann man sie, sobald die
+# Stücke im Browser angekommen und gesichert sind.
+/data/
+/voices/
 
 # Node
 node_modules/
 frontend/dist/
 *.local
-
-# Go
-/backend/server
-/backend/server.exe
-/backend/theater-tts
-/backend/theater-tts.exe
 
 # Editor / OS
 .DS_Store

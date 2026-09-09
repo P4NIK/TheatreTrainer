@@ -49,6 +49,19 @@ describe('related', () => {
   it('erkennt echte Verwechslungen als verschieden', () => {
     expect(related('wein', 'bier')).toBe(false)
   })
+
+  it('bringt Ziffer und Zahlwort zusammen', () => {
+    expect(related('29er', 'neunundzwanziger')).toBe(true)
+    expect(related('1918', 'neunzehnhundertachtzehn')).toBe(true)
+    expect(related('3', 'drei')).toBe(true)
+  })
+
+  it('lässt verschiedene Zahlen nicht als Tippfehler durchgehen', () => {
+    // Ein Zeichen Abstand und derselbe Kölner Code (07): vor der Zahlenprüfung
+    // galten die beiden als dasselbe Wort.
+    expect(related('29er', '20er')).toBe(false)
+    expect(related('1918', '1919')).toBe(false)
+  })
 })
 
 describe('normalizeWord', () => {
@@ -101,6 +114,11 @@ describe('compareSpoken', () => {
     const c = compareSpoken('Nur der junge Warrender.', '')
     expect(c.words.every((w) => w.state === 'missing')).toBe(true)
     expect(c.score).toBe(0)
+  })
+
+  it('zählt eine als Ziffer geschriebene Zahl als fast', () => {
+    const c = compareSpoken('Bring mir den neunundzwanziger Conti.', 'bring mir den 29er Conti')
+    expect(c.words.map((w) => w.state)).toEqual(['ok', 'ok', 'ok', 'near', 'ok'])
   })
 
   it('kommt mit einem leeren Block zurecht', () => {
