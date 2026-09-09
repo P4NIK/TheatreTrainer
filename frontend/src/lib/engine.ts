@@ -81,3 +81,8 @@ export function closeOtherEngines(projectId?: string): void {
     if (engine.projectId !== projectId) engine.close()
   }
 }
+
+/** Ends one engine – after its project has been deleted, say. */
+export function closeEngine(projectId: string): void {
+  engines.get(projectId)?.close()
+}

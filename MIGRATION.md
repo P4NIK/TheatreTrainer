@@ -164,9 +164,28 @@ ganzes Stück, und mehrere Rollen entstehen ohnehin über Tonhöhe und Tempo
 (`audio.ts`). Damit entfallen der README-Abschnitt „Stimmen herunterladen" und
 der Ordner `voices/`.
 
-**5. Projektdaten nach OPFS.** Der größte Einzelbrocken: `project/` im Backend
-wird eine Speicherschicht im Browser, samt Export und Import als eine Datei.
-Ab hier ist das Backend arbeitslos.
+**5. Projektdaten nach OPFS — erledigt.** `store.ts` ist die Portierung von
+`project/store.go`, Datei für Datei: `projects/<id>/project.json`,
+`blocks.json`, `speakers.json`, `cards.json`, `source.pdf`. Auch die Regeln,
+die der Go-Speicher beim Schreiben durchsetzte, gelten weiter – eine
+Regieanweisung verliert ihren Sprechernamen, Blöcke liegen in Lesereihenfolge,
+ein unbekanntes Stück ist ein Fehler und kein leeres. Gegengeprüft in Chromium:
+anlegen, listen, exportieren, importieren, löschen samt Zwischenspeicher.
+
+Dazu zwei Dinge, die es vorher nicht geben musste:
+
+- **Sicherungskopie.** Ein Klick je Stück schreibt `<id>.theater.json` – Projekt,
+  Blöcke, Sprecher, Karteikarten und das PDF, nur der nachrechenbare
+  Zwischenspeicher bleibt draußen. Zurückgelesen wird sie *neben* das
+  vorhandene Stück, nie darüber: ein Import daneben ist zurückzunehmen, ein
+  Import darüber nicht.
+- **Übernahme aus dem alten Backend** (`legacyImport.ts`). Solange der Go-Server
+  noch läuft, holt ein Knopf die dort liegenden Stücke mitsamt PDF in den
+  Browser. Die Datei ist ausdrücklich vorläufig und verschwindet mit Schritt 8.
+
+Damit ruft das Frontend vom Backend nur noch die Spracherkennung ab. Aus
+`api/client.ts` sind fünfzehn Methoden verschwunden; übrig sind `sttInfo` und
+`transcribe`.
 
 **6. Whisper nachziehen.** Der Lernmodus ist unabhängig vom Rest. Wichtig ist
 nur, dass sein Modell **erst beim Einschalten** geladen wird.

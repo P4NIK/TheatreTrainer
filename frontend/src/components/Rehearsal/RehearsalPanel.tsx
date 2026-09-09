@@ -23,6 +23,7 @@ import { api } from '../../api/client'
 
 import { speakerNames } from '../../lib/blocks'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
+import { store } from '../../lib/store'
 import {
   anchorAt,
   buildSteps,
@@ -114,7 +115,7 @@ export default function RehearsalPanel({
   // honest – and picks up a run made in another window.
   useEffect(() => {
     let cancelled = false
-    api
+    store
       .getProject(project.id)
       .then((p) => !cancelled && setProgress(p.progress ?? null))
       .catch(() => undefined)
@@ -236,7 +237,7 @@ export default function RehearsalPanel({
         selection,
         done,
       }
-      api
+      store
         .saveProgress(project.id, body)
         .then((p) => setProgress(p.progress ?? null))
         .catch(() => undefined)
@@ -269,7 +270,7 @@ export default function RehearsalPanel({
   /** Dropping the bookmark without starting anything. */
   const forget = () => {
     setResuming(false)
-    api
+    store
       .clearProgress(project.id)
       .then(() => setProgress(null))
       .catch(() => undefined)

@@ -94,7 +94,7 @@ export function opfsStore(directory: string): BlobStore {
  * ever arrives here – we never build one – so a fresh view of the same memory
  * is enough. Nothing is copied, which is the point at 63 MB of voice.
  */
-function unshared(data: Uint8Array) {
+export function unshared(data: Uint8Array) {
   return new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
 }
 
@@ -113,6 +113,73 @@ export function memoryStore(): BlobStore {
     },
     async list() {
       return [...files].map(([name, data]) => ({ name, size: data.byteLength }))
+    },
+  }
+}
+
+/* --------------------------------------------------------- Project folders */
+
+/**
+ * The folders one level above the files.
+ *
+ * `BlobStore` knows a single flat folder, which is all a cache needs. A
+ * project has several files and is thrown away as a whole, so this adds
+ * exactly two things: which projects there are, and remove all of one.
+ */
+export interface ProjectStorage {
+  /** The ids of the projects, in no particular order. */
+  list(): Promise<string[]>
+  /** The files of one project. */
+  files(id: string): BlobStore
+  /** Removes a project with everything in it, the cache included. */
+  remove(id: string): Promise<void>
+}
+
+export function opfsProjects(root = 'projects'): ProjectStorage {
+  const dir = async () => {
+    const opfs = await navigator.storage.getDirectory()
+    return opfs.getDirectoryHandle(root, { create: true })
+  }
+
+  return {
+    async list() {
+      const out: string[] = []
+      for await (const [name, entry] of (await dir()).entries()) {
+        if (entry.kind === 'directory') out.push(name)
+      }
+      return out
+    },
+
+    files(id) {
+      return opfsStore(`${root}/${id}`)
+    },
+
+    async remove(id) {
+      try {
+        await (await dir()).removeEntry(id, { recursive: true })
+      } catch {
+        // already gone
+      }
+    },
+  }
+}
+
+/** The same, in memory – for tests. */
+export function memoryProjects(): ProjectStorage {
+  const folders = new Map<string, BlobStore>()
+  return {
+    async list() {
+      return [...folders.keys()]
+    },
+    files(id) {
+      const known = folders.get(id)
+      if (known) return known
+      const fresh = memoryStore()
+      folders.set(id, fresh)
+      return fresh
+    },
+    async remove(id) {
+      folders.delete(id)
     },
   }
 }

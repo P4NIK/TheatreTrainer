@@ -47,6 +47,7 @@ import {
   type DeckFilter,
 } from '../../lib/cards'
 import { upcomingBlockIDs, type Step } from '../../lib/rehearsal'
+import { store } from '../../lib/store'
 import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
 import {
   DIRECTION_KEY,
@@ -126,7 +127,7 @@ export default function CardsPanel({
 
   useEffect(() => {
     let cancelled = false
-    api
+    store
       .getCards(project.id)
       .then((d) => !cancelled && setCards(d))
       .catch(() => undefined)
@@ -195,7 +196,7 @@ export default function CardsPanel({
     (blockId: string, grade: Grade, at: number) => {
       const next: CardState = review(cards[blockId], grade, new Date(), project.premiere)
       setCards((d) => ({ ...d, [blockId]: next }))
-      api
+      store
         .saveCards(project.id, { [blockId]: next })
         .then(setCards)
         .catch(() => undefined)
@@ -234,7 +235,7 @@ export default function CardsPanel({
   }
 
   const resetDeck = () => {
-    api
+    store
       .clearCards(project.id)
       .then(() => setCards({}))
       .catch(() => undefined)

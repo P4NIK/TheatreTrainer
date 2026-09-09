@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -16,9 +16,17 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconFilePlus, IconFileTypePdf, IconTrash } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconFilePlus,
+  IconFileTypePdf,
+  IconTrash,
+  IconUpload,
+} from '@tabler/icons-react'
 
-import { api } from '../api/client'
+import { closeEngine } from '../lib/engine'
+import { legacyExport, legacyProjects } from '../lib/legacyImport'
+import { store } from '../lib/store'
 import type { Project } from '../types'
 
 interface Props {
@@ -32,11 +40,19 @@ export default function ProjectsPage({ onOpen }: Props) {
   const [name, setName] = useState('')
   const [pdf, setPdf] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Plays that are still in the old backend and could be taken over. */
+  const [legacy, setLegacy] = useState<Project[]>([])
+  const [taking, setTaking] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     try {
-      setProjects(await api.listProjects())
+      const mine = await store.listProjects()
+      setProjects(mine)
       setError(null)
+      // Only worth asking while there is nothing here yet: afterwards the old
+      // backend is history, and a failed request is the normal answer.
+      setLegacy(mine.length === 0 ? await legacyProjects() : [])
     } catch (e) {
       setError((e as Error).message)
       setProjects([])
@@ -51,7 +67,7 @@ export default function ProjectsPage({ onOpen }: Props) {
     if (!name.trim() || !pdf) return
     setBusy(true)
     try {
-      const p = await api.createProject(name.trim(), pdf)
+      const p = await store.createProject(name.trim(), pdf)
       setModalOpen(false)
       setName('')
       setPdf(null)
@@ -66,10 +82,72 @@ export default function ProjectsPage({ onOpen }: Props) {
   const remove = async (p: Project) => {
     if (!window.confirm(`Projekt "${p.name}" mit PDF und Audio wirklich löschen?`)) return
     try {
-      await api.deleteProject(p.id)
+      await store.deleteProject(p.id)
+      closeEngine(p.id)
       await load()
     } catch (e) {
       notifications.show({ color: 'red', title: 'Löschen fehlgeschlagen', message: (e as Error).message })
+    }
+  }
+
+  /**
+   * The backup. Without a server this is the only copy that survives a browser
+   * clearing its storage – and it is how a play gets onto a second device.
+   */
+  const save = async (p: Project) => {
+    try {
+      const data = await store.exportProject(p.id)
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(data)], { type: 'application/json' }),
+      )
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${p.id}.theater.json`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Sicherungskopie fehlgeschlagen',
+        message: (e as Error).message,
+      })
+    }
+  }
+
+  const restore = async (file: File | null) => {
+    if (!file) return
+    try {
+      const p = await store.importProject(JSON.parse(await file.text()))
+      await load()
+      notifications.show({ color: 'green', message: `„${p.name}" ist wieder da.` })
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Sicherungskopie konnte nicht gelesen werden',
+        message: (e as Error).message,
+      })
+    }
+  }
+
+  /** Copies the plays out of the old backend into this browser. */
+  const takeOver = async () => {
+    setTaking(true)
+    try {
+      for (const p of legacy) await store.importProject(await legacyExport(p.id))
+      await load()
+      notifications.show({
+        color: 'green',
+        message:
+          legacy.length === 1 ? 'Das Stück ist übernommen.' : `${legacy.length} Stücke sind übernommen.`,
+      })
+    } catch (e) {
+      notifications.show({
+        color: 'red',
+        title: 'Übernahme fehlgeschlagen',
+        message: (e as Error).message,
+      })
+    } finally {
+      setTaking(false)
     }
   }
 
@@ -77,14 +155,48 @@ export default function ProjectsPage({ onOpen }: Props) {
     <Container size="md">
       <Group justify="space-between" mb="lg">
         <Title order={2}>Meine Stücke</Title>
-        <Button leftSection={<IconFilePlus size={18} />} onClick={() => setModalOpen(true)}>
-          Neues Projekt
-        </Button>
+        <Group gap="xs">
+          <Button
+            variant="default"
+            leftSection={<IconUpload size={18} />}
+            onClick={() => fileInput.current?.click()}
+          >
+            Sicherungskopie öffnen
+          </Button>
+          <Button leftSection={<IconFilePlus size={18} />} onClick={() => setModalOpen(true)}>
+            Neues Projekt
+          </Button>
+        </Group>
       </Group>
 
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          void restore(e.currentTarget.files?.[0] ?? null)
+          e.currentTarget.value = ''
+        }}
+      />
+
       {error && (
-        <Alert color="red" mb="md" title="Backend nicht erreichbar">
-          {error} – läuft der Go-Server auf Port 8080?
+        <Alert color="red" mb="md" title="Der Browser-Speicher ließ sich nicht lesen">
+          {error}
+        </Alert>
+      )}
+
+      {legacy.length > 0 && (
+        <Alert color="blue" mb="md" title="Es liegen noch Stücke im alten Backend">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">
+              {legacy.map((p) => p.name).join(', ')} – die Stücke werden mitsamt PDF, Blöcken und
+              Lernstand in diesen Browser kopiert. Im Backend bleiben sie unangetastet.
+            </Text>
+            <Button size="xs" loading={taking} onClick={takeOver}>
+              Übernehmen
+            </Button>
+          </Stack>
         </Alert>
       )}
 
@@ -123,6 +235,11 @@ export default function ProjectsPage({ onOpen }: Props) {
                   <Button variant="light" onClick={() => onOpen(p.id)}>
                     Öffnen
                   </Button>
+                  <Tooltip label="Sicherungskopie speichern">
+                    <ActionIcon variant="subtle" onClick={() => save(p)}>
+                      <IconDownload size={18} />
+                    </ActionIcon>
+                  </Tooltip>
                   <Tooltip label="Projekt löschen">
                     <ActionIcon variant="subtle" color="red" onClick={() => remove(p)}>
                       <IconTrash size={18} />
@@ -134,6 +251,12 @@ export default function ProjectsPage({ onOpen }: Props) {
           ))}
         </Stack>
       )}
+
+      <Text size="xs" c="dimmed" mt="xl">
+        Alle Stücke liegen in diesem Browser, nicht auf einem Server. Das ist schnell und kostet
+        nichts – aber wer den Browser-Speicher löscht, löscht sie mit. Eine Sicherungskopie ist eine
+        Datei und dauert einen Klick.
+      </Text>
 
       <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Neues Projekt" centered>
         <Stack>
