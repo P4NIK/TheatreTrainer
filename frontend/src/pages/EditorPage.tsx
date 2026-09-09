@@ -358,6 +358,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
 
         <Tabs.Panel value="speakers">
           <SpeakerConfig
+            projectId={project.id}
             blocks={blocks}
             speakers={speakers}
             onChange={mutateSpeakers}

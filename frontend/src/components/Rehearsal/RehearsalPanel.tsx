@@ -103,7 +103,7 @@ export default function RehearsalPanel({
   const [pending, setPending] = useState<'resume' | 'restart' | null>(null)
   const [runIndex, setRunIndex] = useState(0)
 
-  const audio = useBlockAudio(project.id)
+  const audio = useBlockAudio(project, blocks, speakers)
 
   useEffect(() => {
     api.sttInfo().then(setStt).catch(() => setStt(null))

@@ -2,20 +2,21 @@
  * Typed client for the Go backend. All requests go through the relative
  * "/api" prefix, which Vite proxies to the backend during development and the
  * Go server serves itself in production – no hard-coded hosts anywhere.
+ *
+ * Everything to do with speech has left: synthesis, the voice list, the block
+ * audio and the cache all live in the browser now (lib/synth.ts and around
+ * it). What remains here is storage – project, PDF, blocks, speakers, cards –
+ * and the speech recognition, which is next.
  */
 import type {
   Block,
-  CacheStatus,
   Card,
   Deck,
-  Job,
   ProgressInput,
   Project,
   Speakers,
   SttInfo,
-  SynthOptions,
   Transcript,
-  VoicesResponse,
 } from '../types'
 
 const BASE = '/api'
@@ -122,52 +123,6 @@ export const api = {
   saveSpeakers: (id: string, speakers: Speakers) =>
     request<Speakers>(`/projects/${id}/speakers`, json(speakers)),
 
-  listVoices: () => request<VoicesResponse>('/voices'),
-
-  /** Renders a short sample and returns it as an object URL for <audio>. */
-  previewVoice: async (body: {
-    model: string
-    speakerId: number
-    lengthScale: number
-    volume: number
-    pitch: number
-    text?: string
-  }): Promise<string> => {
-    const res = await fetch(`${BASE}/voices/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      let message = `${res.status} ${res.statusText}`
-      try {
-        const b = await res.json()
-        if (b?.error) message = b.error
-      } catch {
-        /* ignore */
-      }
-      throw new ApiError(message, res.status)
-    }
-    return URL.createObjectURL(await res.blob())
-  },
-
-  startSynthesis: (id: string, opts: SynthOptions) =>
-    request<Job>(`/projects/${id}/synthesize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(opts),
-    }),
-
-  jobStatus: (id: string, jobId: string) =>
-    request<Job>(`/projects/${id}/synthesize/${jobId}`),
-
-  cancelJob: (id: string, jobId: string) =>
-    request<void>(`/projects/${id}/synthesize/${jobId}`, { method: 'DELETE' }),
-
-  /** Audio of a single block – rendered on demand and kept in the cache. */
-  blockAudioUrl: (id: string, blockId: string) =>
-    `${BASE}/projects/${id}/blocks/${blockId}/audio`,
-
   /** Whether a local speech recognition was found – the comparison needs it. */
   sttInfo: () => request<SttInfo>('/stt'),
 
@@ -184,10 +139,4 @@ export const api = {
       body: form,
     })
   },
-
-  cacheStatus: (id: string) => request<CacheStatus>(`/projects/${id}/cache`),
-
-  clearCache: (id: string) => request<void>(`/projects/${id}/cache`, { method: 'DELETE' }),
-
-  audioUrl: (id: string, jobId: string) => `${BASE}/projects/${id}/audio/${jobId}`,
 }

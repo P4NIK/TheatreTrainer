@@ -1,24 +1,24 @@
 /**
- * Piper im Browser.
+ * Piper in the browser.
  *
- * Ersetzt backend/internal/synth/piper.go: statt die Kommandozeile
- * aufzurufen, wird das ONNX-Modell hier selbst gefahren. Der Weg ist derselbe,
- * den auch `piper` geht – Text zu Phonemen mit espeak-ng, Phoneme zu IDs über
- * die Karte der Stimme, IDs durch das VITS-Netz – und das Ergebnis ist
- * sample-genau dasselbe.
+ * A replacement for backend/internal/synth/piper.go: instead of calling the
+ * command line, the ONNX model is driven here. The route is the one `piper`
+ * takes – text to phonemes with espeak-ng, phonemes to ids through the voice's
+ * own map, ids through the VITS network – and the result is the same, sample
+ * for sample.
  *
- * Was hier *nicht* passiert: Lautstärke, Tonhöhe, Entknacksen. Das steht in
- * audio.ts, genau wie im Backend, wo es außerhalb von piper.go liegt. Der
- * Grund ist derselbe: nur so bleibt der teure Teil zwischenspeicherbar und ein
- * verschobener Regler kostenlos.
+ * What does *not* happen here: volume, pitch, de-clicking. That lives in
+ * audio.ts, exactly as in the backend, where it sits outside piper.go. The
+ * reason is the same one: only that way does the expensive part stay
+ * cacheable, and moving a slider stay free.
  *
- * Geladen wird alles erst beim ersten Sprechen. Wer nur ein PDF öffnet und
- * Blöcke markiert, holt sich weder die 18 MB espeak-Daten noch die Stimme.
+ * Nothing is loaded until the first sentence is spoken. Whoever only opens a
+ * PDF and marks blocks fetches neither the 18 MB of espeak data nor a voice.
  */
 
-/** Was aus der .onnx.json gebraucht wird – der Rest interessiert hier nicht. */
 import { fromFloat32 } from './audio'
 
+/** What is needed from the .onnx.json – the rest does not matter here. */
 export interface VoiceConfig {
   audio: { sample_rate: number }
   espeak: { voice: string }
@@ -28,15 +28,16 @@ export interface VoiceConfig {
 }
 
 export interface SynthesisOptions {
-  /** Tempo. 1 lässt die Stimme, wie sie ist; größer wird langsamer. */
+  /** Tempo. 1 leaves the voice as it is; larger is slower. */
   lengthScale?: number
   noiseScale?: number
   noiseW?: number
-  /** Nur bei Mehrsprecher-Modellen; bei Thorsten ohne Wirkung. */
+  /** Only for multi-speaker models; without effect on Thorsten. */
   speakerId?: number
   /**
-   * Jeden Satz auf Vollausschlag ziehen, wie Piper es ohne --no-normalize tut.
-   * Vorgabe an; aus ist vor allem für den Vergleich mit der Kommandozeile da.
+   * Pull every sentence up to full scale, the way Piper does without
+   * --no-normalize. On by default; off is mainly there for comparing against
+   * the command line.
    */
   normalize?: boolean
 }
@@ -44,26 +45,26 @@ export interface SynthesisOptions {
 export interface Synthesis {
   samples: Int16Array
   sampleRate: number
-  /** Für die Fortschrittsanzeige und die Messung. */
+  /** For the progress display and for measuring. */
   phonemizeMs: number
   inferMs: number
   sentences: number
 }
 
 /**
- * Stille zwischen zwei Sätzen, in Sekunden. Pipers Vorgabe – und Teil der
- * Übereinstimmung mit der Kommandozeile, nicht Geschmackssache.
+ * Silence between two sentences, in seconds. Piper's default – and part of
+ * matching the command line, not a matter of taste.
  */
 const SENTENCE_SILENCE = 0.2
 
 let wasmBase = '/wasm/'
 
-/** Wo die WASM-Dateien liegen. Muss vor dem ersten Laden gesetzt werden. */
+/** Where the WASM files live. Must be set before the first load. */
 export function configure(options: { wasmBase?: string }): void {
   if (options.wasmBase) wasmBase = options.wasmBase
 }
 
-/* ------------------------------------------------------- Phonemisierung */
+/* ------------------------------------------------------- Phonemization */
 
 type PhonemizeModule = {
   callMain(args: string[]): void
@@ -80,15 +81,15 @@ let phonemizerLoading: Promise<PhonemizeModule> | null = null
 let printed: string[] = []
 
 /**
- * espeak-ng als WASM. Das Modul lässt sich mehrfach benutzen – ein zweiter
- * Aufruf kostet danach fünf Millisekunden statt der 18 MB noch einmal.
+ * espeak-ng as WASM. The module can be used more than once – a second call
+ * then costs five milliseconds instead of the 18 MB all over again.
  */
 async function getPhonemizer(): Promise<PhonemizeModule> {
   if (phonemizer) return phonemizer
   if (phonemizerLoading) return phonemizerLoading
 
   phonemizerLoading = (async () => {
-    const module = await import(/* @vite-ignore */ `${wasmBase}piper_phonemize.mjs`)
+    const module = await importGenerated(`${wasmBase}piper_phonemize.mjs`)
     const factory = (module.default ?? module) as PhonemizeFactory
     phonemizer = await factory({
       print: (line) => printed.push(line),
@@ -100,13 +101,39 @@ async function getPhonemizer(): Promise<PhonemizeModule> {
   return phonemizerLoading
 }
 
+/**
+ * Turns a file that ships *next to* the app into something importable.
+ *
+ * The direct route – `import('/wasm/x.mjs')` – works in the build but not in
+ * Vite's dev server, which refuses to serve anything from `public/` as a
+ * module because those files never went through its transforms. Fetching the
+ * text and importing it as a blob works in both, and it keeps every generated
+ * artifact in one folder instead of smuggling one of them into `src/`.
+ */
+async function generatedUrl(url: string): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`${url} konnte nicht geladen werden: ${response.status} ${response.statusText}`)
+  }
+  return URL.createObjectURL(new Blob([await response.text()], { type: 'text/javascript' }))
+}
+
+async function importGenerated(url: string): Promise<Record<string, unknown>> {
+  const blob = await generatedUrl(url)
+  try {
+    return await import(/* @vite-ignore */ blob)
+  } finally {
+    URL.revokeObjectURL(blob)
+  }
+}
+
 interface PhonemeLine {
   phonemes: string[]
   phoneme_ids: number[]
   text: string
 }
 
-/** Ruft espeak-ng einmal für alle Sätze auf; es druckt eine Zeile je Satz. */
+/** Calls espeak-ng once for all sentences; it prints one line per sentence. */
 function phonemize(module: PhonemizeModule, sentences: string[], espeakVoice: string): PhonemeLine[] {
   printed = []
   module.callMain([
@@ -118,13 +145,13 @@ function phonemize(module: PhonemizeModule, sentences: string[], espeakVoice: st
 }
 
 /**
- * Der Weg von Phonemen zu IDs, wie ihn Piper geht: BOS, PAD, dann jedes
- * Phonem gefolgt von PAD, am Ende EOS.
+ * The way from phonemes to ids, as Piper walks it: BOS, PAD, then every
+ * phoneme followed by PAD, and EOS at the end.
  *
- * Bewusst selbst gebaut statt die IDs zu nehmen, die das WASM schon liefert:
- * die dort eingebaute Karte ist die Standardkarte, die Stimme bringt aber ihre
- * eigene mit. Bei den deutschen Stimmen sind sie gleich – wäre es einmal
- * anders, fiele es hier auf und nicht erst am Klang.
+ * Built here on purpose instead of taking the ids the WASM already hands out:
+ * the map built into it is the default map, while the voice brings its own.
+ * For the German voices they are the same – were that ever to change, it would
+ * show up here rather than in the sound.
  */
 export function phonemesToIds(
   phonemes: string[],
@@ -148,16 +175,16 @@ export function phonemesToIds(
 }
 
 /**
- * Zerlegt einen Block in Sätze, wie es die Kommandozeile tut.
+ * Splits a block into sentences, the way the command line does.
  *
- * Das WASM-Kommando gibt für mehrsätzigen Text *eine* Zeile zurück,
- * synthetisiert also alles am Stück; Piper teilt in Sätze und legt Stille
- * dazwischen. Ohne diese Teilung weicht die Ausgabe ab.
+ * The WASM command returns *one* line for multi-sentence text and therefore
+ * synthesizes it in one go; Piper splits into sentences and puts silence
+ * between them. Without that split the output differs.
  *
- * Bekannter Unterschied: Piper teilt über espeaks Satzerkennung, hier trennt
- * Intl.Segmenter – und der macht bei „z. B." zwei Sätze daraus. Das kostet eine
- * zusätzliche Pause von 0,2 s, nicht den Text. Sauber zu beheben wäre es nur
- * mit einem WASM-Build, der espeaks Satzgrenzen herausgibt.
+ * Known difference: Piper splits using espeak's sentence detection, while this
+ * uses Intl.Segmenter – and that one makes two sentences out of "z. B.". It
+ * costs an extra pause of 0.2 s, not the text. Fixing it properly would take a
+ * WASM build that hands out espeak's sentence boundaries.
  */
 export function splitSentences(text: string): string[] {
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -171,7 +198,7 @@ export function splitSentences(text: string): string[] {
   return clean.split(/(?<=[.!?…])\s+/).map((s) => s.trim()).filter(Boolean)
 }
 
-/* ------------------------------------------------------------- Inferenz */
+/* ------------------------------------------------------------- Inference */
 
 type OrtModule = typeof import('onnxruntime-web/wasm')
 
@@ -180,9 +207,20 @@ let ort: OrtModule | null = null
 async function getOrt(): Promise<OrtModule> {
   if (ort) return ort
   ort = await import('onnxruntime-web/wasm')
-  ort.env.wasm.wasmPaths = wasmBase
-  // Gemessen: ein Thread ist so schnell wie zwölf, und ohne Threads braucht
-  // die Seite keine Cross-Origin-Isolation – also auch keinen eigenen Server.
+  // Both files by name, and the glue as a blob.
+  //
+  // onnxruntime loads its own glue file as a module. Pointed at a folder it
+  // builds the path itself, which breaks in the dev server (see above) and,
+  // in the build, resolves next to the bundle where the file is not. Naming
+  // both explicitly and handing the glue over as a blob is the one shape that
+  // works in dev and in the build. The URL is not revoked: onnxruntime keeps
+  // it for as long as it may reload the glue.
+  ort.env.wasm.wasmPaths = {
+    wasm: `${wasmBase}ort-wasm-simd-threaded.wasm`,
+    mjs: await generatedUrl(`${wasmBase}ort-wasm-simd-threaded.mjs`),
+  }
+  // Measured: one thread is as fast as twelve, and without threads the page
+  // needs no cross-origin isolation – and therefore no server of its own.
   ort.env.wasm.numThreads = 1
   ort.env.logLevel = 'error'
   return ort
@@ -195,8 +233,8 @@ export interface Voice {
 }
 
 /**
- * Lädt eine Stimme. `model` sind die Bytes der .onnx-Datei, `config` der
- * Inhalt der zugehörigen .onnx.json.
+ * Loads a voice. `model` are the bytes of the .onnx file, `config` the content
+ * of the .onnx.json that goes with it.
  */
 export async function loadVoice(model: ArrayBuffer | Uint8Array, config: VoiceConfig): Promise<Voice> {
   const runtime = await getOrt()
@@ -251,9 +289,9 @@ export async function loadVoice(model: ArrayBuffer | Uint8Array, config: VoiceCo
         const output = await session.run(feeds)
         inferMs += performance.now() - started
 
-        // Piper normalisiert jeden Satz einzeln auf Vollausschlag, solange
-        // --no-normalize fehlt. Das Backend ruft es ohne dieses Flag auf, also
-        // gehört es hierher und nicht in die Nachbearbeitung.
+        // Piper normalizes every sentence on its own to full scale as long as
+        // --no-normalize is missing. The backend called it without that flag,
+        // so it belongs here and not in the post-processing.
         const raw = output[session.outputNames[0]].data as Float32Array
         chunks.push(options.normalize === false ? raw : normalizePeak(raw))
       }
@@ -278,7 +316,7 @@ export async function loadVoice(model: ArrayBuffer | Uint8Array, config: VoiceCo
   }
 }
 
-/* -------------------------------------------------------------- Hilfen */
+/* --------------------------------------------------------------- Helpers */
 
 function normalizePeak(samples: Float32Array): Float32Array {
   let max = 0
@@ -289,7 +327,7 @@ function normalizePeak(samples: Float32Array): Float32Array {
   if (max < 1e-8) return samples
 
   const out = new Float32Array(samples.length)
-  // Auch hier float32: NumPy teilt ein float32-Array durch einen float32-Wert.
+  // float32 here too: NumPy divides a float32 array by a float32 value.
   for (let i = 0; i < samples.length; i++) out[i] = Math.fround(samples[i] / max)
   return out
 }
@@ -308,5 +346,3 @@ function join(chunks: Float32Array[], sampleRate: number): Float32Array {
   })
   return out
 }
-
-

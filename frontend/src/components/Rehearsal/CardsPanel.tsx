@@ -122,7 +122,7 @@ export default function CardsPanel({
   const [steps, setSteps] = useState<Step[]>([])
   const [tally, setTally] = useState<Tally>(NO_GRADES)
 
-  const audio = useBlockAudio(project.id)
+  const audio = useBlockAudio(project, blocks, speakers)
 
   useEffect(() => {
     let cancelled = false
