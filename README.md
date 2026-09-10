@@ -480,6 +480,42 @@ verschonen möge (`navigator.storage.persist()`). Chrome gewährt das meist
 stillschweigend, Safari ist strenger – verlassen sollte man sich darauf nicht,
 und genau deshalb gibt es die Sicherungskopie.
 
+## Auf dem Telefon
+
+Die Seite ist auf ein Handy ausgelegt, den Editor eingeschlossen: Blöcke werden
+mit dem Finger gezogen, sobald der Knopf **Markieren** gedrückt ist – ohne ihn
+schiebt der Finger die Seite, wie man es erwartet.
+
+Auf dem iPhone gehört die App auf den **Home-Bildschirm** (Teilen → *Zum
+Home-Bildschirm*). Das ist keine Kosmetik: Safari löscht die Daten einer Seite,
+die sieben Tage lang niemand besucht hat. Für eine Web-App auf dem
+Home-Bildschirm gilt das nicht, und nur sie hat Aussicht darauf, dass
+`navigator.storage.persist()` bewilligt wird. Ein Stück, an dem eine Woche
+niemand geprobt hat, ist im Browser-Tab also nicht sicher – auf dem
+Home-Bildschirm schon eher, und mit Sicherungskopie ganz.
+
+### Technik-Prüfung
+
+Unter der Stückeliste steht *Läuft alles auf diesem Gerät?* (`#/technik`). Die
+Seite probiert auf dem Gerät aus, woran es hängen könnte, statt es aus der
+Browser-Kennung zu raten:
+
+- schreibt ein Megabyte in den Speicher, liest es zurück, löscht es wieder
+- fragt Platz, Dauerspeicher und den Zustand vom Home-Bildschirm ab
+- sagt, ob Stimme und Spracherkennung schon heruntergeladen sind
+- nimmt auf Knopfdruck drei Sekunden auf und misst, ob wirklich etwas ankam
+- lässt auf Knopfdruck einen Satz sprechen und misst, wie lange das dauert
+- **Langzeit-Marke:** eine Notiz, die beim ersten Start geschrieben und bei
+  jedem weiteren gelesen wird. Sie hält fest, wie lange die Daten schon
+  unangetastet liegen und welche Pause sie bisher überstanden haben – die
+  Antwort auf „hält das auch in drei Wochen noch", die keine einzelne Sitzung
+  geben kann.
+
+Die Notiz liegt doppelt, in OPFS und in `localStorage`. Beide räumt der Browser
+nach denselben Regeln, aber nicht immer im selben Moment: Fehlt eine von
+beiden, sagt die Prüfung, welche der Browser weggeräumt hat. *Bericht kopieren*
+legt das Ganze als Text in die Zwischenablage.
+
 ## Projektstruktur
 
 ```
@@ -492,8 +528,9 @@ frontend/
                       # Karteikarten (Leitner + Sitzungsqueue),
                       # Wortvergleich (Levenshtein + Kölner Phonetik),
                       # Synthese (piper, synth, audio, storage, store),
-                      # Spracherkennung (stt)
-  src/pages/          # Projektliste und Editor
+                      # Spracherkennung (stt),
+                      # Technik-Prüfung (diagnose)
+  src/pages/          # Projektliste, Editor, Technik-Prüfung
 spike-wasm/           # Wegwerf-Prototypen aus der Umstellung, mit Messwerten
 spike-whisper/
 spike-storage/
@@ -533,7 +570,8 @@ sortieren; die Nummer am Rahmen zeigt die Vorlese-Position.
 
 **Ein Stück ist verschwunden** – hat der Browser aufgeräumt (Verlauf gelöscht,
 „Website-Daten entfernen“, privates Fenster), sind die Stücke weg. Dann hilft
-nur die Sicherungskopie. Deshalb: siehe oben.
+nur die Sicherungskopie. Deshalb: siehe oben. Ob der Browser tatsächlich
+aufgeräumt hat oder woanders etwas klemmt, sagt die Technik-Prüfung.
 
 ## Tests
 

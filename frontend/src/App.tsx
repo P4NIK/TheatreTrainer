@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { AppShell, Anchor, Group, Loader, Text } from '@mantine/core'
 import { IconMasksTheater } from '@tabler/icons-react'
 
+import { touchMarker } from './lib/diagnose'
 import ProjectsPage from './pages/ProjectsPage'
 
 /**
@@ -14,24 +15,42 @@ import ProjectsPage from './pages/ProjectsPage'
  */
 const EditorPage = lazy(() => import('./pages/EditorPage'))
 
+/** Die Technik-Prüfung braucht kaum jemand, und dann sofort. Also auch später. */
+const DiagnosePage = lazy(() => import('./pages/DiagnosePage'))
+
 /**
- * Minimal hash based routing – the app has exactly two screens, so a router
+ * Minimal hash based routing – the app has a handful of screens, so a router
  * dependency would be overkill.
  *   #/            → project list
  *   #/p/<id>      → editor
+ *   #/technik     → what this device can do
  */
-function currentProjectId(): string | null {
-  const m = window.location.hash.match(/^#\/p\/([^/]+)/)
-  return m ? decodeURIComponent(m[1]) : null
+type Route = { page: 'projects' } | { page: 'editor'; id: string } | { page: 'technik' }
+
+function currentRoute(): Route {
+  const hash = window.location.hash
+  const m = hash.match(/^#\/p\/([^/]+)/)
+  if (m) return { page: 'editor', id: decodeURIComponent(m[1]) }
+  if (hash.startsWith('#/technik')) return { page: 'technik' }
+  return { page: 'projects' }
 }
 
 export default function App() {
-  const [projectId, setProjectId] = useState<string | null>(currentProjectId)
+  const [route, setRoute] = useState<Route>(currentRoute)
 
   useEffect(() => {
-    const onHash = () => setProjectId(currentProjectId())
+    const onHash = () => setRoute(currentRoute())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  /*
+   * Die Langzeit-Marke wird beim Start gesetzt, nicht erst in der
+   * Technik-Prüfung: Gezählt werden soll, wann jemand die App benutzt hat, und
+   * nicht, wann er zuletzt nachgesehen hat, ob sie noch funktioniert.
+   */
+  useEffect(() => {
+    void touchMarker().catch(() => undefined)
   }, [])
 
   const goHome = () => {
@@ -62,8 +81,10 @@ export default function App() {
             </Group>
           }
         >
-          {projectId ? (
-            <EditorPage projectId={projectId} onBack={goHome} />
+          {route.page === 'editor' ? (
+            <EditorPage projectId={route.id} onBack={goHome} />
+          ) : route.page === 'technik' ? (
+            <DiagnosePage onBack={goHome} />
           ) : (
             <ProjectsPage onOpen={(id) => (window.location.hash = `#/p/${encodeURIComponent(id)}`)} />
           )}

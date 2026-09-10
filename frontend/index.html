@@ -7,7 +7,14 @@
     <meta name="description" content="Theaterstücke proben: vorlesen lassen, eigene Rolle üben – alles im Browser." />
     <meta name="theme-color" content="#4c6ef5" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <!--
+      iOS nimmt für den Home-Bildschirm weder SVG noch die Symbole aus dem
+      Manifest, sondern ausschließlich dieses eine PNG. Fehlt es, landet ein
+      Bildschirmfoto der Seite auf dem Home-Bildschirm.
+    -->
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Vorleser" />
     <link rel="manifest" href="/manifest.webmanifest" />
   </head>
   <body>

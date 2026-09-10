@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Button,
   Card,
   Container,
@@ -211,7 +212,15 @@ export default function ProjectsPage({ onOpen }: Props) {
       <Text size="xs" c="dimmed" mt="xl">
         Alle Stücke liegen in diesem Browser, nicht auf einem Server. Das ist schnell und kostet
         nichts – aber wer den Browser-Speicher löscht, löscht sie mit. Eine Sicherungskopie ist eine
-        Datei und dauert einen Klick.
+        Datei und dauert einen Klick.{' '}
+        <Anchor
+          size="xs"
+          component="button"
+          type="button"
+          onClick={() => (window.location.hash = '#/technik')}
+        >
+          Läuft alles auf diesem Gerät?
+        </Anchor>
       </Text>
 
       <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Neues Projekt" centered>
