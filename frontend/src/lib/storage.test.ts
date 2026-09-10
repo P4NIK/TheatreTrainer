@@ -75,6 +75,35 @@ describe('BlockCache', () => {
   })
 })
 
+describe('BlobSink', () => {
+  it('schreibt in Stücken und trägt den Kopf zuletzt nach', async () => {
+    const store = memoryStore()
+    const sink = await store.open('spur.bin')
+    // Erst ein Platzhalter, wie es der WAV-Kopf braucht.
+    await sink.write(new Uint8Array([0, 0, 0, 0]))
+    await sink.write(new Uint8Array([1, 2, 3]))
+    await sink.write(new Uint8Array([4, 5]))
+    await sink.patch(0, new Uint8Array([9, 9, 9, 9]))
+    const file = await sink.close()
+
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(
+      new Uint8Array([9, 9, 9, 9, 1, 2, 3, 4, 5]),
+    )
+    expect(await store.read('spur.bin')).toEqual(new Uint8Array([9, 9, 9, 9, 1, 2, 3, 4, 5]))
+  })
+
+  it('wächst über die erste Puffergröße hinaus', async () => {
+    const store = memoryStore()
+    const sink = await store.open('gross.bin')
+    for (let i = 0; i < 40; i++) await sink.write(new Uint8Array(100).fill(i))
+    const file = await sink.close()
+    expect(file.size).toBe(4000)
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    expect(bytes[0]).toBe(0)
+    expect(bytes[3999]).toBe(39)
+  })
+})
+
 describe('decodeWav', () => {
   it('liest, was encodeWav schreibt', () => {
     const original = samples(64)

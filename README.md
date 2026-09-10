@@ -461,8 +461,17 @@ projects/<projekt-id>/
   speakers.json   # Stimme, Tonhöhe, Tempo, Lautstärke und Farbe je Sprecher
   cards.json      # Karteikarten: Fach, fällig ab, Zähler – je geübter Replik
   source.pdf      # das importierte Stück
+  track.wav       # die zuletzt erzeugte Hörfassung
   cache/          # Audio je Block, benannt nach dem Hash seiner Einstellungen
 ```
+
+Die Hörfassung wird beim Erzeugen laufend in `track.wav` geschrieben, Block für
+Block. Der naheliegende Weg – alles sammeln und am Ende zusammensetzen – kostet
+bei zwei Stunden Ton ein halbes Gigabyte und mehr, weil dieselben Daten dabei
+mehrfach im Speicher liegen; ein Telefon beendet die Seite lange vorher. So
+braucht ein ganzes Stück nicht mehr Platz im Arbeitsspeicher als ein einzelner
+Block, und die fertige Datei wird von der Platte abgespielt statt aus dem
+Speicher.
 
 Die Rechteck-Koordinaten sind relativ zur Seitengröße (0–1) gespeichert und
 damit unabhängig von Zoomstufe und Auflösung.
@@ -552,6 +561,11 @@ dem eigenen Speicher.
 noch auf einer Stimme aus der Zeit, als die Modelle von Hand installiert
 wurden. Einfach *Thorsten* wählen; mehrere Rollen unterscheidest du über
 Tonhöhe und Tempo.
+
+**Auf dem iPhone bricht die Seite mitten im Erzeugen ab** – das war die
+Hörfassung im Arbeitsspeicher; seit sie laufend auf die Platte geschrieben wird
+(siehe oben), sollte es nicht mehr vorkommen. Die Technik-Prüfung sagt unter
+*Lange Aufnahmen*, ob dieser Browser das kann.
 
 **Die Auswertung lädt und lädt** – das Whisper-Modell sind rund 200 MB. Bricht
 der Download ab, sagt es der Satz unter dem Schalter; ein zweiter Klick nimmt

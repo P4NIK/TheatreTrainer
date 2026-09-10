@@ -21,7 +21,7 @@
 
 import type { Block, Project, SelectionItem, Speakers } from '../types'
 import { DIRECTION_KEY } from '../types'
-import { resample, silence } from './audio'
+import { pcmBytes, resample, silence } from './audio'
 
 /** Everything Piper needs for one block. Mirrors synth.Request. */
 export interface SynthRequest {
@@ -314,6 +314,15 @@ export interface RenderPlanOptions {
   render: (request: SynthRequest) => Promise<RenderedBlock>
   onProgress?: (progress: { done: number; total: number; message: string } & RunStats) => void
   signal?: AbortSignal
+  /**
+   * Where the samples go while the run is still going.
+   *
+   * Without it they pile up in memory and are joined at the end – fine for a
+   * scene, and four copies of a whole play. With it the track goes to disk
+   * block by block and `samples` comes back empty; `sampleCount` says how long
+   * it got.
+   */
+  sink?: { write(part: Uint8Array): Promise<void> }
 }
 
 /** Summarises a finished run in one line, as the backend does. */
@@ -346,16 +355,17 @@ function concat(parts: Int16Array[], total: number): Int16Array {
 export async function renderPlan(
   items: PlanItem[],
   options: RenderPlanOptions,
-): Promise<{ samples: Int16Array; stats: RunStats; message: string }> {
-  const { sampleRate, render } = options
+): Promise<{ samples: Int16Array; sampleCount: number; stats: RunStats; message: string }> {
+  const { sampleRate, render, sink } = options
   const gap = silence(options.gapMs, sampleRate)
   const skipPause = silence(options.skippedRoleMs, sampleRate)
 
   const parts: Int16Array[] = []
   let total = 0
-  const push = (part: Int16Array) => {
-    parts.push(part)
+  const push = async (part: Int16Array) => {
     total += part.length
+    if (sink) await sink.write(pcmBytes(part))
+    else parts.push(part)
   }
 
   const stats: RunStats = { rendered: 0, cached: 0, skippedRole: 0, fixedPauses: 0 }
@@ -365,8 +375,8 @@ export async function renderPlan(
     const item = items[i]
 
     if (item.fixedPause) {
-      push(skipPause)
-      push(gap)
+      await push(skipPause)
+      await push(gap)
       stats.skippedRole++
       stats.fixedPauses++
       options.onProgress?.({ done: i + 1, total: items.length, message: 'Pause für die eigene Rolle', ...stats })
@@ -386,8 +396,8 @@ export async function renderPlan(
       samples = new Int16Array(samples.length)
       stats.skippedRole++
     }
-    push(samples)
-    push(gap)
+    await push(samples)
+    await push(gap)
 
     options.onProgress?.({
       done: i + 1,
@@ -397,5 +407,10 @@ export async function renderPlan(
     })
   }
 
-  return { samples: concat(parts, total), stats, message: doneMessage(stats) }
+  return {
+    samples: sink ? new Int16Array(0) : concat(parts, total),
+    sampleCount: total,
+    stats,
+    message: doneMessage(stats),
+  }
 }

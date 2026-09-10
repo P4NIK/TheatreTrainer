@@ -16,7 +16,7 @@
  */
 
 import type { RenderedBlock, SynthRequest } from './pipeline'
-import { BlockCache, ModelStore, opfsStore, type DownloadProgress } from './storage'
+import { BlockCache, ModelStore, opfsStore, type BlobSink, type DownloadProgress } from './storage'
 import { cachedRenderer, PiperPool } from './synth'
 
 export interface VoiceProgress extends DownloadProgress {
@@ -30,12 +30,21 @@ export interface Engine {
   readonly pool: PiperPool
   /** The renderer to hand to runSynthesis(). */
   readonly render: (request: SynthRequest) => Promise<RenderedBlock>
+  /**
+   * Opens the file the finished track is written into, next to the play it
+   * belongs to. Hand it to runSynthesis() and the run stays small no matter
+   * how long the play is.
+   */
+  openTrack(): Promise<BlobSink>
   /** Watches voice downloads; returns the function that stops watching. */
   watchVoice(listener: (progress: VoiceProgress) => void): () => void
   close(): void
 }
 
 const engines = new Map<string, Engine>()
+
+/** The finished play, in the project's own folder. */
+export const TRACK_FILE = 'track.wav'
 
 export function engineFor(projectId: string): Engine {
   const known = engines.get(projectId)
@@ -44,6 +53,9 @@ export function engineFor(projectId: string): Engine {
   const listeners = new Set<(progress: VoiceProgress) => void>()
   const models = new ModelStore(opfsStore('models'))
   const cache = new BlockCache(opfsStore(`projects/${projectId}/cache`))
+  // Neben project.json und source.pdf, nicht im Zwischenspeicher: der räumt
+  // nach jedem Durchlauf auf, was kein Block mehr braucht.
+  const files = opfsStore(`projects/${projectId}`)
   const pool = new PiperPool({
     models,
     onVoiceProgress: (voice, progress) => {
@@ -57,6 +69,7 @@ export function engineFor(projectId: string): Engine {
     models,
     pool,
     render: cachedRenderer(pool.synthesize, cache),
+    openTrack: () => files.open(TRACK_FILE),
     watchVoice(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)

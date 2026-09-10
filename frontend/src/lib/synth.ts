@@ -16,7 +16,7 @@
  * block.
  */
 
-import { encodeWav, postProcess } from './audio'
+import { encodeWav, postProcess, wavHeader } from './audio'
 import { WASM_BASE } from './generated'
 import {
   cacheKey,
@@ -31,7 +31,7 @@ import {
   type SynthRequest,
 } from './pipeline'
 import type { VoiceConfig } from './piper'
-import type { BlockCache, DownloadProgress, ModelStore } from './storage'
+import type { BlobSink, BlockCache, DownloadProgress, ModelStore } from './storage'
 import type { Block, Project, Speakers } from '../types'
 import { fetchVoice } from './voices'
 
@@ -108,12 +108,28 @@ export interface RunOptions {
   skippedRoleMs?: number
   onProgress?: (progress: { done: number; total: number; message: string } & RunStats) => void
   signal?: AbortSignal
+  /**
+   * Where the track is written while it is being made.
+   *
+   * With it the run costs one block of memory instead of the whole play – see
+   * BlobSink. Without it everything stays in memory, which is what the tests
+   * do and what a browser without OPFS is left with.
+   */
+  sink?: BlobSink
 }
 
 export interface RunResult {
+  /** The finished track: play it, download it, keep it. */
+  file: File
+  /**
+   * The same audio as bytes – empty when the run went to a sink, because that
+   * is the whole point of a sink.
+   */
   wav: ArrayBuffer
   samples: Int16Array
   sampleRate: number
+  /** How many samples the track holds, sink or no sink. */
+  sampleCount: number
   stats: RunStats
   /** The one-line summary, worded as the backend worded it. */
   message: string
@@ -135,20 +151,69 @@ export async function runSynthesis(
 ): Promise<RunResult> {
   const plan: Plan = planRun(input)
   const sampleRate = options.sampleRate ?? SAMPLE_RATE
+  let sink = options.sink
 
-  const { samples, stats, message } = await renderPlan(plan.items, {
-    sampleRate,
-    gapMs: options.gapMs ?? GAP_MS,
-    skippedRoleMs: options.skippedRoleMs ?? SKIPPED_ROLE_MS,
-    render,
-    onProgress: options.onProgress,
-    signal: options.signal,
-  })
+  /*
+   * Der Kopf einer WAV-Datei nennt ihre Länge, und die steht erst am Ende
+   * fest. Also zuerst ein Kopf mit Null, und ganz zum Schluss der richtige an
+   * dieselbe Stelle – das ist billiger, als die Datei hinterher umzukopieren.
+   *
+   * Ob der Browser überhaupt zurückschreiben kann, wird gleich hier geprüft
+   * und nicht erst am Ende: Ein Durchlauf, der nach zehn Minuten Arbeit an
+   * seinen letzten 44 Bytes scheitert, wäre die unfreundlichste Art, das
+   * herauszufinden. Kann er es nicht, geht es eben über den Speicher.
+   */
+  if (sink) {
+    try {
+      await sink.write(wavHeader(0, sampleRate))
+      await sink.patch(0, wavHeader(0, sampleRate))
+    } catch (error) {
+      console.warn('Spur wird im Speicher gebaut:', error)
+      await sink.abort().catch(() => undefined)
+      sink = undefined
+    }
+  }
 
+  let rendered
+  try {
+    rendered = await renderPlan(plan.items, {
+      sampleRate,
+      gapMs: options.gapMs ?? GAP_MS,
+      skippedRoleMs: options.skippedRoleMs ?? SKIPPED_ROLE_MS,
+      render,
+      onProgress: options.onProgress,
+      signal: options.signal,
+      sink,
+    })
+  } catch (error) {
+    // Ein Abbruch soll keinen offenen Schreibstrom hinterlassen.
+    await sink?.abort().catch(() => undefined)
+    throw error
+  }
+
+  const { samples, sampleCount, stats, message } = rendered
+
+  if (sink) {
+    await sink.patch(0, wavHeader(sampleCount, sampleRate))
+    return {
+      file: await sink.close(),
+      wav: new ArrayBuffer(0),
+      samples,
+      sampleRate,
+      sampleCount,
+      stats,
+      message,
+      problems: plan.problems,
+    }
+  }
+
+  const wav = encodeWav(samples, sampleRate)
   return {
-    wav: encodeWav(samples, sampleRate),
+    file: new File([wav], 'hoerfassung.wav', { type: 'audio/wav' }),
+    wav,
     samples,
     sampleRate,
+    sampleCount,
     stats,
     message,
     problems: plan.problems,

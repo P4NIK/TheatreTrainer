@@ -142,6 +142,91 @@ describe('runSynthesis', () => {
     block({ id: 'b', order: 1, speaker: 'ANNA', text: 'Auch Ihnen einen guten Abend.' }),
   ]
 
+  /*
+   * Der Punkt, um den es geht: dieselbe Spur, einmal im Speicher gebaut und
+   * einmal Stück für Stück auf die Platte geschrieben. Byte für Byte gleich –
+   * sonst wäre der sparsame Weg ein anderer Weg.
+   */
+  it('schreibt dieselbe Datei, ob über den Speicher oder in eine Senke', async () => {
+    const lauf = (sink?: Awaited<ReturnType<ReturnType<typeof memoryStore>['open']>>) =>
+      runSynthesis(
+        {
+          project: { myRole: '' },
+          blocks,
+          speakers,
+          options: { skipMyRole: false, includeDirections: true },
+          knownModels: known,
+        },
+        cachedRenderer(fakePiper().synthesize, new BlockCache(memoryStore())),
+        { sink },
+      )
+
+    const speicher = await lauf()
+    const platte = memoryStore()
+    const gestreamt = await lauf(await platte.open('track.wav'))
+
+    expect(gestreamt.sampleCount).toBe(speicher.sampleCount)
+    expect(gestreamt.samples.length).toBe(0) // nichts mehr im Speicher
+    expect(gestreamt.stats).toEqual(speicher.stats)
+
+    const erwartet = new Uint8Array(speicher.wav)
+    const bekommen = new Uint8Array(await gestreamt.file.arrayBuffer())
+    expect(bekommen.length).toBe(erwartet.length)
+    expect(bekommen).toEqual(erwartet)
+    // Und die Datei liegt danach wirklich im Speicher der Senke.
+    expect((await platte.read('track.wav'))?.byteLength).toBe(erwartet.length)
+  })
+
+  // Ein Browser, der nicht zurückschreiben kann, soll das am Anfang sagen und
+  // nicht nach getaner Arbeit.
+  it('baut die Spur im Speicher, wenn die Senke nicht zurückschreiben kann', async () => {
+    const platte = memoryStore()
+    const sink = await platte.open('track.wav')
+    sink.patch = () => Promise.reject(new Error('kein Zurückschreiben'))
+    const abbruch = vi.spyOn(sink, 'abort')
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const out = await runSynthesis(
+      {
+        project: { myRole: '' },
+        blocks,
+        speakers,
+        options: { skipMyRole: false, includeDirections: true },
+        knownModels: known,
+      },
+      cachedRenderer(fakePiper().synthesize, new BlockCache(memoryStore())),
+      { sink },
+    )
+
+    expect(abbruch).toHaveBeenCalled()
+    expect(out.samples.length).toBeGreaterThan(0)
+    expect(out.file.size).toBe(44 + out.samples.length * 2)
+    vi.restoreAllMocks()
+  })
+
+  it('schließt die Senke auch beim Abbruch', async () => {
+    const platte = memoryStore()
+    const sink = await platte.open('track.wav')
+    const abbruch = vi.spyOn(sink, 'abort')
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      runSynthesis(
+        {
+          project: { myRole: '' },
+          blocks,
+          speakers,
+          options: { skipMyRole: false, includeDirections: true },
+          knownModels: known,
+        },
+        cachedRenderer(fakePiper().synthesize, new BlockCache(memoryStore())),
+        { sink, signal: controller.signal },
+      ),
+    ).rejects.toThrow()
+    expect(abbruch).toHaveBeenCalled()
+  })
+
   it('setzt die Blöcke mit Pausen zu einer Spur zusammen', async () => {
     const piper = fakePiper()
     const out = await runSynthesis(

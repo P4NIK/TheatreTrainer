@@ -211,6 +211,58 @@ export async function opfsCheck(): Promise<Check> {
   }
 }
 
+/**
+ * The trick a long run depends on: writing a file in pieces and correcting
+ * its head at the end.
+ *
+ * Without it the whole play has to be assembled in memory before it can be
+ * saved, and on a phone that is what kills the tab halfway through. The app
+ * falls back to that way on its own – this says whether it has to.
+ */
+export async function streamCheck(): Promise<Check> {
+  const key = 'stream'
+  const title = 'Lange Aufnahmen'
+  const store = opfsStore('diagnose')
+  const name = `stromprobe-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}.bin`
+
+  try {
+    const sink = await store.open(name)
+    try {
+      await sink.write(new Uint8Array([0, 0, 0, 0]))
+      await sink.write(new Uint8Array([1, 2, 3]))
+      await sink.patch(0, new Uint8Array([7, 7, 7, 7]))
+      const file = await sink.close()
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const erwartet = [7, 7, 7, 7, 1, 2, 3]
+      if (bytes.length !== erwartet.length || erwartet.some((b, i) => bytes[i] !== b)) {
+        throw new Error(`herauskam ${[...bytes].join(',')} statt ${erwartet.join(',')}`)
+      }
+    } catch (error) {
+      await sink.abort().catch(() => undefined)
+      throw error
+    }
+
+    return {
+      key,
+      title,
+      status: 'ok',
+      detail:
+        'Die Hörfassung wird beim Erzeugen laufend auf die Platte geschrieben. Ein ganzes Stück braucht dadurch nicht mehr Speicher als ein einzelner Block.',
+    }
+  } catch (error) {
+    return {
+      key,
+      title,
+      status: 'warn',
+      detail: `Dieser Browser kann eine Datei nicht stückweise schreiben (${(error as Error).message}).`,
+      advice:
+        'Die Hörfassung wird dann im Arbeitsspeicher zusammengebaut. Bei einem ganzen Stück kann das dem Telefon zu viel werden – dann besser in Abschnitten erzeugen.',
+    }
+  } finally {
+    await store.remove(name).catch(() => undefined)
+  }
+}
+
 export async function persistenceCheck(): Promise<Check> {
   const key = 'persist'
   const title = 'Dauerhafter Speicher'

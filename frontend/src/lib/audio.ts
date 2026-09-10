@@ -333,16 +333,28 @@ export function fromFloat32(samples: Float32Array): Int16Array {
   return out
 }
 
-/** Mono 16-bit PCM in a WAV container, ready for a Blob or a download. */
-export function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(44 + samples.length * 2)
-  const view = new DataView(buffer)
+/** The 44 bytes in front of the samples. */
+export const WAV_HEADER_BYTES = 44
+
+/**
+ * The header of a mono 16-bit WAV.
+ *
+ * Separate from the samples because a long track is written to disk in pieces:
+ * the header goes first with a length of zero and is overwritten at the end,
+ * when the length is finally known. Holding two hours of audio in memory just
+ * to learn how long it is costs a few hundred megabytes – and on a phone that
+ * is the difference between a finished recording and a tab that dies.
+ */
+export function wavHeader(sampleCount: number, sampleRate: number): Uint8Array {
+  const header = new Uint8Array(WAV_HEADER_BYTES)
+  const view = new DataView(header.buffer)
   const ascii = (offset: number, text: string) => {
     for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i))
   }
+  const dataBytes = sampleCount * 2
 
   ascii(0, 'RIFF')
-  view.setUint32(4, 36 + samples.length * 2, true)
+  view.setUint32(4, 36 + dataBytes, true)
   ascii(8, 'WAVEfmt ')
   view.setUint32(16, 16, true) // fmt chunk size
   view.setUint16(20, 1, true) // PCM
@@ -352,8 +364,35 @@ export function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer 
   view.setUint16(32, 2, true) // block align
   view.setUint16(34, 16, true) // bits per sample
   ascii(36, 'data')
-  view.setUint32(40, samples.length * 2, true)
+  view.setUint32(40, dataBytes, true)
+  return header
+}
 
-  for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, samples[i], true)
-  return buffer
+/** True on every machine this runs on; the check costs nothing and says so. */
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
+
+/**
+ * The samples as the bytes a WAV wants them: little-endian, no copy.
+ *
+ * A view onto the same memory, which is the point – this sits in the inner
+ * loop of a run that writes hundreds of megabytes.
+ */
+export function pcmBytes(samples: Int16Array): Uint8Array {
+  if (LITTLE_ENDIAN) {
+    return new Uint8Array(samples.buffer as ArrayBuffer, samples.byteOffset, samples.byteLength)
+  }
+  // Big-endian machines do not run browsers any more, but silently writing
+  // the bytes the wrong way round would be a nasty way to find out.
+  const out = new Uint8Array(samples.byteLength)
+  const view = new DataView(out.buffer)
+  for (let i = 0; i < samples.length; i++) view.setInt16(i * 2, samples[i], true)
+  return out
+}
+
+/** Mono 16-bit PCM in a WAV container, ready for a Blob or a download. */
+export function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
+  const out = new Uint8Array(WAV_HEADER_BYTES + samples.length * 2)
+  out.set(wavHeader(samples.length, sampleRate))
+  out.set(pcmBytes(samples), WAV_HEADER_BYTES)
+  return out.buffer
 }

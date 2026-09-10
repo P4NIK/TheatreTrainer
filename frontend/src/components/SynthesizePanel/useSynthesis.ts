@@ -46,6 +46,30 @@ export interface StartOptions {
   selection?: SelectionItem[]
 }
 
+/**
+ * Hält den Bildschirm an, solange erzeugt wird.
+ *
+ * Ein ganzes Stück dauert Minuten. Geht dabei der Bildschirm aus, hält das
+ * Telefon die Seite an – und der Durchlauf steht, bis jemand wieder hinsieht.
+ * Die Sperre gilt nur, solange die Seite sichtbar ist; wer wegwischt, hält den
+ * Durchlauf weiterhin an. Browser ohne diese Möglichkeit ignorieren es.
+ */
+interface WakeLockLike {
+  release(): Promise<void>
+}
+
+async function keepAwake(): Promise<WakeLockLike | null> {
+  const api = (navigator as unknown as {
+    wakeLock?: { request(type: 'screen'): Promise<WakeLockLike> }
+  }).wakeLock
+  if (!api) return null
+  try {
+    return await api.request('screen')
+  } catch {
+    return null // z. B. weil die Seite gerade nicht sichtbar ist
+  }
+}
+
 const IDLE: RunState = {
   status: 'idle',
   done: 0,
@@ -88,6 +112,7 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
     async (options: StartOptions) => {
       const controller = new AbortController()
       running.current = controller
+      const wach = await keepAwake()
 
       if (url.current) {
         URL.revokeObjectURL(url.current)
@@ -137,21 +162,42 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
 
         setState((s) => ({ ...s, status: 'running', voice: null, message: 'Der erste Block wird erzeugt …' }))
 
+        /*
+         * Die fertige Aufnahme geht auf die Platte, nicht in den Speicher.
+         *
+         * Ein ganzes Stück sind zwei Stunden Ton, und die im Arbeitsspeicher
+         * zusammenzusetzen kostet ein Vielfaches davon – auf dem Telefon
+         * stirbt der Tab dabei mitten im Durchlauf. Geht das Öffnen schief
+         * (kein OPFS), läuft es wie vorher über den Speicher.
+         */
+        const sink = await engine.openTrack().catch(() => null)
+
+        // Aus dem Wurf pro Block wird ein Bild alle 150 ms: bei Blöcken aus
+        // dem Zwischenspeicher kommen sonst vierzig Zustandswechsel in der
+        // Sekunde an, und die kosten mehr Zeit als die Audioausgabe selbst.
+        let zuletzt = 0
+        const melde = (progress: { done: number; total: number; message: string; rendered: number; cached: number }) => {
+          const jetzt = performance.now()
+          if (jetzt - zuletzt < 150 && progress.done < progress.total) return
+          zuletzt = jetzt
+          setState((s) => ({
+            ...s,
+            status: 'running',
+            done: progress.done,
+            total: progress.total,
+            rendered: progress.rendered,
+            cached: progress.cached,
+            message: progress.message,
+          }))
+        }
+
         const out = await runSynthesis(input, engine.render, {
           signal: controller.signal,
-          onProgress: (progress) =>
-            setState((s) => ({
-              ...s,
-              status: 'running',
-              done: progress.done,
-              total: progress.total,
-              rendered: progress.rendered,
-              cached: progress.cached,
-              message: progress.message,
-            })),
+          onProgress: melde,
+          sink: sink ?? undefined,
         })
 
-        url.current = URL.createObjectURL(new Blob([out.wav], { type: 'audio/wav' }))
+        url.current = URL.createObjectURL(out.file)
         setState({
           status: 'done',
           done: plan.items.length,
@@ -179,6 +225,7 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
         }))
       } finally {
         running.current = null
+        void wach?.release().catch(() => undefined)
         refreshCache()
       }
     },

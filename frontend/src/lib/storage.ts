@@ -22,6 +22,33 @@ export interface BlobStore {
   write(name: string, data: Uint8Array): Promise<void>
   remove(name: string): Promise<void>
   list(): Promise<{ name: string; size: number }[]>
+  /** Opens a file to be written in pieces – see BlobSink. */
+  open(name: string): Promise<BlobSink>
+}
+
+/**
+ * A file that is written piece by piece.
+ *
+ * For the finished play: two hours of speech are three hundred megabytes, and
+ * building that in memory first – as an array of parts, then joined, then in a
+ * WAV, then in a Blob – is four copies of it. A desktop machine shrugs; a
+ * phone kills the tab halfway through. Written straight to disk, the run needs
+ * no more memory for its four-hundredth block than for its first.
+ */
+export interface BlobSink {
+  /** Appends bytes at the end. */
+  write(part: Uint8Array): Promise<void>
+  /**
+   * Overwrites bytes that were already written.
+   *
+   * For a header whose length is only known once everything is written. Call
+   * it last: after it, the write position sits behind the patched bytes.
+   */
+  patch(position: number, part: Uint8Array): Promise<void>
+  /** Closes the file and hands it over – backed by disk, not by memory. */
+  close(): Promise<File>
+  /** Gives up; what was written stays behind as a torso. */
+  abort(): Promise<void>
 }
 
 /* ------------------------------------------------------------------ OPFS */
@@ -82,6 +109,35 @@ export function opfsStore(directory: string): BlobStore {
       }
       return out
     },
+
+    async open(name) {
+      const handle = await (await dir()).getFileHandle(name, { create: true })
+      // Ohne `keepExistingData` fängt die Datei bei null an – ein neuer
+      // Durchlauf soll den alten nicht zur Hälfte überschreiben.
+      const writable = await handle.createWritable()
+      let offen = true
+
+      return {
+        async write(part) {
+          await writable.write(unshared(part))
+        },
+        async patch(position, part) {
+          await writable.write({ type: 'write', position, data: unshared(part) })
+        },
+        async close() {
+          if (offen) {
+            offen = false
+            await writable.close()
+          }
+          return handle.getFile()
+        },
+        async abort() {
+          if (!offen) return
+          offen = false
+          await writable.abort().catch(() => undefined)
+        },
+      }
+    },
   }
 }
 
@@ -113,6 +169,43 @@ export function memoryStore(): BlobStore {
     },
     async list() {
       return [...files].map(([name, data]) => ({ name, size: data.byteLength }))
+    },
+
+    async open(name) {
+      // Wächst wie ein Puffer wächst: verdoppeln statt bei jedem Stück neu
+      // anzulegen. Das ist die Fassung für die Tests – im Browser schreibt
+      // opfsStore auf die Platte.
+      let daten = new Uint8Array(1024)
+      let laenge = 0
+      const platz = (gebraucht: number) => {
+        if (gebraucht <= daten.byteLength) return
+        let groesse = daten.byteLength
+        while (groesse < gebraucht) groesse *= 2
+        const groesser = new Uint8Array(groesse)
+        groesser.set(daten.subarray(0, laenge))
+        daten = groesser
+      }
+
+      return {
+        async write(part) {
+          platz(laenge + part.byteLength)
+          daten.set(part, laenge)
+          laenge += part.byteLength
+        },
+        async patch(position, part) {
+          platz(position + part.byteLength)
+          daten.set(part, position)
+          laenge = Math.max(laenge, position + part.byteLength)
+        },
+        async close() {
+          const fertig = daten.slice(0, laenge)
+          files.set(name, fertig)
+          return new File([fertig], name)
+        },
+        async abort() {
+          laenge = 0
+        },
+      }
     },
   }
 }
