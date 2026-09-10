@@ -57,6 +57,18 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request))
     return
   }
+  /*
+   * Das Manifest nie aus dem Zwischenspeicher, solange Netz da ist.
+   *
+   * In ihm steht, unter welcher Adresse die App auf dem Home-Bildschirm
+   * landet. Eine veraltete Kopie ist hier teurer als ein kurzer Umweg übers
+   * Netz: Sie schickt jeden, der das Symbol antippt, an die falsche Stelle,
+   * und das lässt sich von der Seite aus nicht mehr geradebiegen.
+   */
+  if (url.pathname.endsWith('.webmanifest')) {
+    event.respondWith(freshFirst(request))
+    return
+  }
   // Alles unter assets/ hat einen Hash im Namen und ändert sich nie.
   if (url.pathname.includes('/assets/')) {
     event.respondWith(cacheFirst(request))
@@ -78,6 +90,19 @@ async function networkFirst(request) {
     // in einem Unterordner stimmt.
     const start = await caches.match(self.registration.scope)
     if (start) return start
+    throw error
+  }
+}
+
+/** Netz zuerst, die abgelegte Kopie nur, wenn keins da ist. */
+async function freshFirst(request) {
+  try {
+    const response = await fetch(request)
+    await put(request, response)
+    return response
+  } catch (error) {
+    const cached = await caches.match(request)
+    if (cached) return cached
     throw error
   }
 }
