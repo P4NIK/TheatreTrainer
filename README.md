@@ -503,6 +503,14 @@ Home-Bildschirm gilt das nicht, und nur sie hat Aussicht darauf, dass
 niemand geprobt hat, ist im Browser-Tab also nicht sicher – auf dem
 Home-Bildschirm schon eher, und mit Sicherungskopie ganz.
 
+Welche Adresse dabei gespeichert wird, steht im Manifest, und zwar dreifach
+verschachtelt: `start_url` und `scope` werden gegen die Adresse des Manifests
+aufgelöst – deshalb `"./"`, damit es unter `github.io/TheatreTrainer/` genauso
+stimmt wie lokal unter `/`. Die Kennung `id` dagegen wird gegen den *Ursprung*
+aufgelöst: `"./"` heißt dort `https://p4nik.github.io/`, und genau die landete
+dann auf dem Home-Bildschirm. Es gibt hier deshalb kein `id` – ohne die Angabe
+gilt `start_url`, und das ist die richtige Adresse.
+
 ### Technik-Prüfung
 
 Unter der Stückeliste steht *Läuft alles auf diesem Gerät?* (`#/technik`). Die

@@ -14,15 +14,24 @@
  *
  *   Seitenaufrufe   erst Netz, dann Zwischenspeicher. So kommt eine neue
  *                   Fassung an, und ohne Netz startet trotzdem die alte.
- *   alles andere    erst Zwischenspeicher, dann Netz. Die Dateinamen tragen
+ *   assets/         erst Zwischenspeicher, dann Netz. Diese Dateinamen tragen
  *                   einen Hash, eine alte Antwort kann also nicht veralten.
+ *   alles andere    Zwischenspeicher zuerst, aber im Hintergrund nachgeholt.
+ *                   manifest.webmanifest, die Symbole und die WASM-Dateien
+ *                   heißen immer gleich – einmal abgelegt, blieben sie sonst
+ *                   für immer stehen. Das ist einmal teuer geworden: im
+ *                   Manifest steht, unter welcher Adresse die App auf dem
+ *                   Home-Bildschirm landet, und die alte Fassung zeigte auf
+ *                   die falsche.
  *
  * Nicht angefasst wird, was von fremden Adressen kommt: die Stimme liegt in
  * OPFS, das Whisper-Modell im Cache von transformers.js. Beide sind größer als
  * alles hier und haben ihre eigene Verwaltung.
  */
 
-const CACHE = 'theater-v1'
+// Der Name ist die Handhabe zum Aufräumen: Wer ihn ändert, wirft beim nächsten
+// Start alles Alte weg – siehe das activate-Ereignis.
+const CACHE = 'theater-v2'
 
 self.addEventListener('install', () => self.skipWaiting())
 
@@ -48,7 +57,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request))
     return
   }
-  event.respondWith(cacheFirst(request))
+  // Alles unter assets/ hat einen Hash im Namen und ändert sich nie.
+  if (url.pathname.includes('/assets/')) {
+    event.respondWith(cacheFirst(request))
+    return
+  }
+  event.respondWith(revalidate(event, request))
 })
 
 async function networkFirst(request) {
@@ -75,6 +89,34 @@ async function cacheFirst(request) {
   const response = await fetch(request)
   await put(request, response)
   return response
+}
+
+/**
+ * Die alte Antwort sofort, die neue für das nächste Mal.
+ *
+ * Für Dateien mit festem Namen. Nachgeladen wird im Hintergrund und über den
+ * ganz normalen Zwischenspeicher des Browsers – bei 35 MB WASM sind das in der
+ * Regel ein paar 304er und kein einziges Byte Nutzlast.
+ */
+async function revalidate(event, request) {
+  const cached = await caches.match(request)
+  const frisch = fetch(request)
+    .then(async (response) => {
+      await put(request, response)
+      return response
+    })
+    .catch(() => null)
+
+  if (!cached) {
+    const response = await frisch
+    if (response) return response
+    throw new Error(`${request.url}: weder abgelegt noch erreichbar`)
+  }
+
+  // Ohne waitUntil darf der Browser den Worker beenden, sobald die Antwort
+  // draußen ist – und dann käme die neue Fassung nie an.
+  event.waitUntil(frisch)
+  return cached
 }
 
 async function put(request, response) {
