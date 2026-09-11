@@ -33,6 +33,7 @@ import {
   IconArrowLeft,
   IconCheck,
   IconClipboardText,
+  IconEar,
   IconMicrophone,
   IconRefresh,
   IconVolume,
@@ -48,6 +49,7 @@ import {
   opfsCheck,
   persistenceCheck,
   recorderCheck,
+  restartCheck,
   reportText,
   spaceCheck,
   storedCheck,
@@ -60,7 +62,8 @@ import {
 } from '../lib/diagnose'
 import { encodeWav } from '../lib/audio'
 import { ModelStore, opfsStore, requestPersistence, storageState } from '../lib/storage'
-import { toMono16k } from '../lib/stt'
+import { freeVoices } from '../lib/engine'
+import { precisionFor, stt, toMono16k, WHISPER_BYTES } from '../lib/stt'
 import { PiperPool } from '../lib/synth'
 import { VOICES } from '../lib/voices'
 
@@ -118,6 +121,9 @@ export default function DiagnosePage({ onBack }: Props) {
 
   // Mikrofon
   const [nimmtAuf, setNimmtAuf] = useState(false)
+  // Spracherkennung
+  const [erkennt, setErkennt] = useState(false)
+  const [erkennerLaden, setErkennerLaden] = useState(0)
   // Sprechprobe
   const [spricht, setSpricht] = useState(false)
   const [fortschritt, setFortschritt] = useState(0)
@@ -147,6 +153,7 @@ export default function DiagnosePage({ onBack }: Props) {
         recorderCheck(),
         wasmCheck(),
         markerCheck(vorher, new Date(), used),
+        restartCheck(),
       ])
     } finally {
       laeuft.current = false
@@ -226,6 +233,55 @@ export default function DiagnosePage({ onBack }: Props) {
     } finally {
       stream?.getTracks().forEach((t) => t.stop())
       setNimmtAuf(false)
+    }
+  }
+
+  /**
+   * Die Spracherkennung aufbauen – der Teil, an dem ein Telefon am ehesten
+   * zerbricht.
+   *
+   * Nicht das Herunterladen ist das Riskante, sondern der Augenblick danach:
+   * Aus den geladenen Dateien baut onnxruntime das Netz im Speicher auf. Geht
+   * dabei die Seite verloren, steht es beim nächsten Öffnen unter „Neustarts“
+   * – deshalb ist dieser Knopf hier und nicht im Lernmodus.
+   */
+  const erkennerPruefen = async () => {
+    setErkennt(true)
+    setErkennerLaden(0)
+    const aus = stt.watch((p) => {
+      if (p.total > 0) setErkennerLaden(Math.min(1, p.loaded / Math.max(p.total, WHISPER_BYTES)))
+    })
+    const begonnen = performance.now()
+    try {
+      // Dieselbe Vorsichtsmaßnahme wie im Lernmodus: erst die Stimme aus dem
+      // Speicher, dann das Netz aufbauen.
+      freeVoices()
+      await stt.ensure()
+      const dauer = Math.round((performance.now() - begonnen) / 1000)
+      setExtra((alt) => [
+        ...alt.filter((c) => c.key !== 'erkenner'),
+        {
+          key: 'erkenner',
+          title: 'Spracherkennung',
+          status: 'ok',
+          detail: `Aufgebaut und bereit – ${dauer} s, Genauigkeit ${precisionFor() === 'q8' ? 'sparsam (q8)' : 'voll (fp32)'}. Wenn die Seite das hier übersteht, übersteht sie es auch im Lernmodus.`,
+        },
+      ])
+    } catch (error) {
+      setExtra((alt) => [
+        ...alt.filter((c) => c.key !== 'erkenner'),
+        {
+          key: 'erkenner',
+          title: 'Spracherkennung',
+          status: 'fail',
+          detail: `Ging nicht: ${(error as Error).message}`,
+          advice: 'Ohne sie läuft der Lernmodus weiter, nur ohne Auswertung des Gesagten.',
+        },
+      ])
+    } finally {
+      aus()
+      setErkennt(false)
+      void pruefen()
     }
   }
 
@@ -360,6 +416,21 @@ export default function DiagnosePage({ onBack }: Props) {
         >
           Sprechprobe
         </Button>
+        <Button
+          variant="light"
+          leftSection={<IconEar size={18} />}
+          onClick={() => void erkennerPruefen()}
+          loading={erkennt}
+        >
+          Spracherkennung aufbauen
+        </Button>
+        <Text size="xs" c="dimmed" ta="center" mt={-4}>
+          Das ist die Stelle, an der die Seite auf dem Telefon am ehesten neu lädt. Hier ausgelöst,
+          steht danach unter „Neustarts“, ob sie es überlebt hat.
+        </Text>
+        {erkennt && erkennerLaden > 0 && erkennerLaden < 1 && (
+          <Progress value={erkennerLaden * 100} size="sm" striped animated />
+        )}
         <Text size="xs" c="dimmed" ta="center" mt={-4}>
           Lässt die Stimme einen Satz sprechen. Beim ersten Mal lädt sie dabei
           ({formatBytes(VOICES[0].bytes)}), danach nie wieder.

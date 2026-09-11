@@ -17,6 +17,14 @@
  * decoder in q4. A q8 encoder saves space but drops syllables on quiet or
  * acted speech – and quiet and acted is the normal case in a theatre.
  *
+ * Auf dem Telefon gilt dieser Handel trotzdem nicht. Nicht das Herunterladen
+ * kostet dort, sondern der Augenblick danach: Aus der geladenen Datei baut
+ * onnxruntime das Netz im WASM-Speicher auf, und für einen Moment liegt beides
+ * nebeneinander. Safari auf dem iPhone beendet die Seite dabei – sichtbar als
+ * „lädt neu“, genau bei 100 %. Ein Erkenner, der die Seite abschießt, erkennt
+ * schlechter als ein ungenauerer, der läuft; deshalb bekommt ein Telefon den
+ * q8-Encoder und ein Rechner weiterhin den vollen.
+ *
  * Nothing is loaded until the learning mode is switched on. That is the point
  * of keeping it out of the app bundle: whoever only listens to their play
  * never fetches these 200 MB.
@@ -32,6 +40,22 @@ export const WHISPER_MODEL = 'onnx-community/whisper-base'
 
 /** Roughly what the first use downloads – for a sentence before the wait. */
 export const WHISPER_BYTES = 200 * 1024 * 1024
+
+/** Womit der Encoder gerechnet wird. Der Decoder bleibt immer q4. */
+export type Precision = 'fp32' | 'q8'
+
+/**
+ * Welche Genauigkeit dieses Gerät verträgt.
+ *
+ * Ein grober Zeiger heißt Finger heißt Telefon oder Tablet – und dort ist der
+ * Speicher beim Aufbau des Netzes die engere Grenze als die Genauigkeit. Die
+ * Abfrage steht hier und nicht im Worker: `matchMedia` gibt es nur im Fenster.
+ */
+export function precisionFor(
+  matches: (query: string) => boolean = (q) => window.matchMedia?.(q).matches === true,
+): Precision {
+  return matches('(pointer: coarse)') ? 'q8' : 'fp32'
+}
 
 export interface SttProgress {
   /** The file being fetched, e.g. "onnx/encoder_model.onnx". */
@@ -93,12 +117,19 @@ export class SttEngine {
    * switched on rather than when the first line has been spoken – a wait with
    * a progress bar is a wait, a wait after speaking looks like a failure.
    */
-  async ensure(): Promise<void> {
+  async ensure(precision?: Precision): Promise<void> {
     if (this.loaded) return
     if (this.loading) return this.loading
 
     this.loading = (async () => {
-      await this.send({ id: 0, type: 'load', model: WHISPER_MODEL, wasmBase, modelHost })
+      await this.send({
+        id: 0,
+        type: 'load',
+        model: WHISPER_MODEL,
+        wasmBase,
+        modelHost,
+        precision: precision ?? precisionFor(),
+      })
       this.loaded = true
     })()
     this.loading.catch(() => {

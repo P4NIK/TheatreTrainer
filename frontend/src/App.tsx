@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { AppShell, Anchor, Group, Loader, Text } from '@mantine/core'
 import { IconMasksTheater } from '@tabler/icons-react'
 
-import { touchMarker } from './lib/diagnose'
+import { noteStart, touchMarker } from './lib/diagnose'
 import ProjectsPage from './pages/ProjectsPage'
 
 /**
@@ -51,6 +51,8 @@ export default function App() {
    */
   useEffect(() => {
     void touchMarker().catch(() => undefined)
+    // Und ein Strich für diesen Start – siehe noteStart().
+    noteStart()
   }, [])
 
   const goHome = () => {
