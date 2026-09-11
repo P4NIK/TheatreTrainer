@@ -22,8 +22,15 @@ export interface LayoutProfile {
   speechX: number
   /** How far an item may sit from a column and still count as part of it. */
   tolerance: number
-  /** Where the profile came from – shown in the UI. */
-  source: 'learned' | 'guessed'
+  /**
+   * Nach welcher Regel gelesen wird – und woher sie kommt.
+   *
+   * `learned` und `guessed` meinen dasselbe Muster: Sprecher und Regie stehen
+   * in der linken Spalte, der Sprechtext eingerückt daneben. `fontStyle` ist
+   * ein anderes Stück Typografie: keine Spalten, sondern fett für den Namen
+   * und kursiv für die Regie, alles im selben Absatz.
+   */
+  source: 'learned' | 'guessed' | 'fontStyle'
   /** How many hand-drawn blocks the profile was learned from. */
   sampleSize: number
 }
@@ -35,6 +42,13 @@ export interface DetectionResult {
   pagesScanned: number
   /** Pages dropped because they contain no dialogue at all. */
   pagesWithoutDialogue: number[]
+  /**
+   * Wie oft jede Rolle aufgerufen wurde – gezählt an den Namen, nicht an den
+   * Blöcken. Eine Replik, die von einer Regieanweisung geteilt wird, ergibt
+   * zwei Blöcke, aber einen Einsatz; nur so ist die Zahl mit der Rollenliste
+   * des Stücks vergleichbar.
+   */
+  cues: Map<string, number>
 }
 
 /** A visual line: all pieces that share a baseline. */
@@ -206,6 +220,15 @@ interface Draft {
   pieces: TextPiece[]
   /** Set when the text differs from the pieces, e.g. an inline "NAME:" prefix. */
   textOverride?: string
+  /**
+   * Gesetzt, wo das Rechteck nicht aus den eigenen Stücken kommt.
+   *
+   * Im Schriftschnitt-Muster gehören mehrere Blöcke zu einem Absatz und teilen
+   * sich dessen Umriss – Sprechtext und Regieanweisung stehen dort in
+   * derselben Zeile, ein eigenes Rechteck je Block wäre ein Strich mitten
+   * durch ein Wort.
+   */
+  rect?: Rect
 }
 
 /**
@@ -233,6 +256,413 @@ export interface DetectOptions {
   skipPagesWithoutDialogue: boolean
 }
 
+/* ------------------------------------------- Muster: fett und kursiv */
+
+/*
+ * Das zweite Muster, nach dem Stücke gesetzt werden.
+ *
+ * Es gibt keine Spalten. Alles beginnt am linken Rand, und was der Leser
+ * unterscheidet, unterscheidet er an der Schrift: der Sprechername fett und
+ * mit Doppelpunkt, die Regieanweisung kursiv – mitten im Sprechtext in
+ * Klammern, oder als ganzer Absatz für sich. Ein Block ist hier nicht eine
+ * Zeile in einer Spalte, sondern ein Absatz, und der zerfällt in so viele
+ * Blöcke, wie die Schrift darin wechselt.
+ *
+ * Was dabei nicht zum Stück gehört, muss vorher weg: die Kopfzeile des
+ * Verlags, die Fußzeile mit der Seitenzahl, Akt- und Szenenüberschriften und
+ * die Zeile mit den Personen der Szene.
+ */
+
+/** Eine Zeile mit dem, was die Absatzerkennung von ihr wissen muss. */
+interface TextLine {
+  y: number
+  x0: number
+  x1: number
+  height: number
+  text: string
+  pieces: TextPiece[]
+}
+
+function textLines(pieces: TextPiece[]): TextLine[] {
+  return groupLines(pieces).map((line) => ({
+    y: line.y,
+    x0: Math.min(...line.pieces.map((p) => p.x)),
+    x1: Math.max(...line.pieces.map((p) => p.x + p.w)),
+    height: Math.max(...line.pieces.map((p) => p.h)),
+    text: piecesToText(line.pieces),
+    pieces: line.pieces,
+  }))
+}
+
+/** Höchstens so viele Wörter darf ein Name vor dem Doppelpunkt haben. */
+const NAME_WORDS = 5
+
+interface SpeakerHead {
+  name: string
+  /** Erstes Stück nach dem Namen. */
+  next: number
+  /** Was im selben Stück hinter dem Doppelpunkt stand. */
+  rest: string
+}
+
+/**
+ * Liest einen fett gesetzten Namen mit Doppelpunkt, beginnend bei `from`.
+ *
+ * Fett *und* Doppelpunkt müssen beide zutreffen. Fett allein ist im Fließtext
+ * eine Hervorhebung, ein Doppelpunkt allein steht in jedem zweiten Satz.
+ */
+export function speakerHead(pieces: TextPiece[], from: number): SpeakerHead | null {
+  if (!pieces[from]?.bold) return null
+
+  for (let i = from; i < Math.min(from + NAME_WORDS + 1, pieces.length); i++) {
+    const piece = pieces[i]
+    const colon = piece.str.indexOf(':')
+    if (colon >= 0) {
+      const name = piecesToText(pieces.slice(from, i + 1)).split(':')[0].trim()
+      if (!name || name.includes('(') || name.length > 40) return null
+      return { name, next: i + 1, rest: piece.str.slice(colon + 1).trim() }
+    }
+    if (!piece.bold) return null
+  }
+  return null
+}
+
+const HEADING_RE = /^\d+\s*\.\s*(Akt|Szene|Aufzug|Auftritt|Bild)\b/i
+const STAGE_WORDS = new Set(['vorhang', 'ende', 'pause', 'schluss', 'zwischenvorhang'])
+/** Wie weit oben oder unten eine Zeile stehen muss, um Kopf- oder Fußzeile zu sein. */
+const BAND = 0.15
+/** Auf so vielen Seiten muss sie stehen, damit sie als laufende Zeile gilt. */
+const RUNNING_SHARE = 0.6
+/**
+ * Und auf mindestens so vielen, gleichgültig wie kurz der Bereich ist.
+ *
+ * Sonst reichen bei drei durchsuchten Seiten schon zwei Treffer – und ein
+ * Sprechername, der zweimal unten auf der Seite landet, wäre plötzlich eine
+ * Fußzeile. Genau das ist beim Prüfen passiert.
+ */
+const RUNNING_PAGES = 3
+/** So wenig darf ihre Höhe über die Seiten schwanken. Eine Fußzeile steht still. */
+const RUNNING_DRIFT = 0.02
+/** Zeile mit den Personen einer Szene: „Wilhelm, Gisela“, mittig gesetzt. */
+const CAST_LINE_RE =
+  /^[A-ZÄÖÜ][\wäöüß.-]*( [A-ZÄÖÜ][\wäöüß.-]*)*( *(,|und) *[A-ZÄÖÜ][\wäöüß.-]*( [A-ZÄÖÜ][\wäöüß.-]*)*)+$/
+
+interface DocStats {
+  /** Die Größe der Grundschrift; alles Größere ist eine Überschrift. */
+  bodyHeight: number
+  /** Zeilentexte, die auf fast jeder Seite oben oder unten stehen. */
+  running: Set<string>
+  /** Seite mit der ersten Akt- oder Szenenüberschrift; davor steht Beiwerk. */
+  firstAct: number | null
+}
+
+/** Seitenzahlen wechseln, der Rest der Fußzeile nicht. */
+function runningKey(text: string): string {
+  return text.replace(/\d+/g, '#')
+}
+
+function documentStats(linesByPage: Map<number, TextLine[]>): DocStats {
+  const heights: number[] = []
+  const bands = new Map<string, { pages: Set<number>; top: number; bottom: number }>()
+  let firstAct: number | null = null
+
+  for (const page of [...linesByPage.keys()].sort((a, b) => a - b)) {
+    for (const line of linesByPage.get(page) ?? []) {
+      for (const piece of line.pieces) heights.push(piece.h)
+      if (line.y <= BAND || line.y >= 1 - BAND) {
+        const key = runningKey(line.text)
+        const seen = bands.get(key) ?? { pages: new Set<number>(), top: line.y, bottom: line.y }
+        seen.pages.add(page)
+        seen.top = Math.min(seen.top, line.y)
+        seen.bottom = Math.max(seen.bottom, line.y)
+        bands.set(key, seen)
+      }
+      if (firstAct === null && HEADING_RE.test(line.text.trim())) firstAct = page
+    }
+  }
+
+  const genug = Math.max(RUNNING_PAGES, linesByPage.size * RUNNING_SHARE)
+  const running = new Set<string>()
+  for (const [key, seen] of bands) {
+    // Oft genug – und immer an derselben Stelle. Ein Satz, der zufällig
+    // zweimal ans Seitenende rutscht, tut Letzteres nicht.
+    if (seen.pages.size >= genug && seen.bottom - seen.top < RUNNING_DRIFT) running.add(key)
+  }
+  return { bodyHeight: heights.length ? median(heights) : 0.014, running, firstAct }
+}
+
+function isRunning(line: TextLine, stats: DocStats): boolean {
+  if (line.y > BAND && line.y < 1 - BAND) return false
+  return stats.running.has(runningKey(line.text))
+}
+
+function isHeading(line: TextLine, stats: DocStats): boolean {
+  const text = line.text.trim()
+  if (HEADING_RE.test(text)) return true
+  if (line.height > stats.bodyHeight * 1.15) return true
+  const centred = Math.abs((line.x0 + line.x1) / 2 - 0.5) < 0.05
+  return (
+    centred &&
+    line.pieces[0]?.bold === true &&
+    STAGE_WORDS.has(text.toLowerCase().replace(/[.!:\-\s]/g, ''))
+  )
+}
+
+function isCastLine(line: TextLine): boolean {
+  const centred = Math.abs((line.x0 + line.x1) / 2 - 0.5) < 0.04
+  return centred && CAST_LINE_RE.test(line.text.trim())
+}
+
+/**
+ * Absätze über die Zeilenabstände.
+ *
+ * Überschriften und Personenzeilen sind keine Blöcke, trennen aber – sonst
+ * verschluckt eine Szenenüberschrift den Absatz, der ihr folgt.
+ */
+function paragraphsOf(lines: TextLine[], stats: DocStats): TextLine[][] {
+  const body = lines.filter((line) => line.text.trim() !== '' && !isRunning(line, stats))
+  if (body.length === 0) return []
+
+  const gaps = body.slice(1).map((line, i) => line.y - body[i].y).filter((gap) => gap > 0)
+  const limit = Math.max(gaps.length ? median(gaps) * 1.5 : 0.02, stats.bodyHeight * 1.6)
+
+  const groups: TextLine[][] = []
+  let current: TextLine[] = []
+  let previous: TextLine | null = null
+
+  for (const line of body) {
+    if (isHeading(line, stats) || isCastLine(line)) {
+      if (current.length) groups.push(current)
+      current = []
+      previous = null
+      continue
+    }
+    if (previous && line.y - previous.y > limit) {
+      groups.push(current)
+      current = []
+    }
+    current.push(line)
+    previous = line
+  }
+  if (current.length) groups.push(current)
+  return groups.filter((group) => group.length > 0)
+}
+
+/**
+ * Der Text einer kursiven Stelle, ohne die Klammern.
+ *
+ * Steht der ganze Absatz kursiv, ist er die Regieanweisung – auch wenn
+ * irgendwo darin eine Klammer vorkommt. Nur wenn außerhalb der Klammern
+ * nichts weiter steht, sind die Klammern die Blöcke.
+ */
+function directionTexts(text: string): string[] {
+  const inner = [...text.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim()).filter(Boolean)
+  if (inner.length === 0) return [text.trim()].filter(Boolean)
+  const outside = text.replace(/\([^)]*\)/g, ' ').replace(/[\s.,;:!?–-]+/g, '')
+  return outside === '' ? inner : [text.trim()].filter(Boolean)
+}
+
+/** Zerlegt einen Absatz und gibt den Sprecher zurück, der danach gilt. */
+function segmentParagraph(
+  lines: TextLine[],
+  page: number,
+  speaker: string | null,
+  options: DetectOptions,
+  out: Draft[],
+  cues: Map<string, number>,
+): string | null {
+  const pieces = lines.flatMap((line) => line.pieces)
+  const lineStarts = new Set(lines.map((line) => line.pieces[0]).filter(Boolean))
+  const rect = boundingBox(pieces)
+  if (!rect) return speaker
+
+  let buffer: TextPiece[] = []
+
+  const push = (type: BlockType, text: string) => {
+    if (text === '') return
+    out.push({
+      page,
+      type,
+      speaker: type === 'line' ? speaker : null,
+      pieces,
+      rect,
+      textOverride: text,
+    })
+  }
+
+  const flush = () => {
+    if (buffer.length === 0) return
+
+    const runs: { italic: boolean; pieces: TextPiece[] }[] = []
+    for (const piece of buffer) {
+      const last = runs[runs.length - 1]
+      if (last && last.italic === (piece.italic === true)) last.pieces.push(piece)
+      else runs.push({ italic: piece.italic === true, pieces: [piece] })
+    }
+    const onlyDirection = runs.every((run) => run.italic)
+
+    // „im Text lassen“ heißt: gar nicht erst trennen.
+    if (!onlyDirection && options.inlineDirections === 'keep') {
+      push('line', piecesToText(buffer))
+      buffer = []
+      return
+    }
+
+    for (const run of runs) {
+      const text = piecesToText(run.pieces)
+      if (text === '') continue
+      if (!run.italic) {
+        push('line', text)
+        continue
+      }
+      if (!onlyDirection && options.inlineDirections === 'strip') continue
+      for (const part of directionTexts(text)) push('direction', part)
+    }
+    buffer = []
+  }
+
+  let i = 0
+  while (i < pieces.length) {
+    const head = lineStarts.has(pieces[i]) ? speakerHead(pieces, i) : null
+    if (head) {
+      flush()
+      speaker = head.name
+      cues.set(speaker, (cues.get(speaker) ?? 0) + 1)
+      i = head.next
+      // „Luzifer: Sie sind hier falsch.“ – der Rest steht im selben Stück.
+      if (head.rest) {
+        buffer.push({ ...pieces[head.next - 1], str: head.rest, bold: false, italic: false })
+      }
+      continue
+    }
+    buffer.push(pieces[i])
+    i++
+  }
+  flush()
+  return speaker
+}
+
+function draftsByFontStyle(
+  piecesByPage: Map<number, TextPiece[]>,
+  options: DetectOptions,
+  cues: Map<string, number>,
+): { drafts: Draft[]; pagesWithoutDialogue: number[] } {
+  const linesByPage = new Map<number, TextLine[]>()
+  for (const [page, pieces] of piecesByPage) linesByPage.set(page, textLines(pieces))
+  const stats = documentStats(linesByPage)
+
+  const drafts: Draft[] = []
+  const pagesWithoutDialogue: number[] = []
+  let speaker: string | null = null
+
+  for (const page of [...piecesByPage.keys()].sort((a, b) => a - b)) {
+    // Vor dem ersten Akt stehen Titelblatt, Verlagsbedingungen und
+    // Rollenliste. Deren fett gesetzte Überschriften mit Doppelpunkt sehen
+    // wie Sprechernamen aus – „Bühnenbild:“ ist keine Rolle.
+    if (options.skipPagesWithoutDialogue && stats.firstAct !== null && page < stats.firstAct) {
+      pagesWithoutDialogue.push(page)
+      continue
+    }
+
+    const pageStart = drafts.length
+    for (const paragraph of paragraphsOf(linesByPage.get(page) ?? [], stats)) {
+      speaker = segmentParagraph(paragraph, page, speaker, options, drafts, cues)
+    }
+
+    if (options.skipPagesWithoutDialogue) {
+      const spoke = drafts.slice(pageStart).some((d) => d.type === 'line' && d.speaker)
+      if (!spoke) {
+        drafts.length = pageStart
+        pagesWithoutDialogue.push(page)
+      }
+    }
+  }
+  return { drafts, pagesWithoutDialogue }
+}
+
+/**
+ * Erkennt das Muster daran, dass Absätze mit einem fetten Namen und einem
+ * Doppelpunkt beginnen.
+ *
+ * Drei Treffer sind wenig, aber der Doppelpunkt hinter fetter Schrift am
+ * Zeilenanfang kommt im Fließtext praktisch nicht vor. Der Anteil hält
+ * zusätzlich ein Stück davon ab, an einer einzelnen fetten Zwischenzeile
+ * hängenzubleiben.
+ */
+export function fontStyleProfile(piecesByPage: Map<number, TextPiece[]>): LayoutProfile | null {
+  let names = 0
+  let lines = 0
+  let left = 1
+
+  for (const pieces of piecesByPage.values()) {
+    for (const line of textLines(pieces)) {
+      if (line.text.trim() === '') continue
+      lines++
+      if (speakerHead(line.pieces, 0)) {
+        names++
+        left = Math.min(left, line.x0)
+      }
+    }
+  }
+  if (names < 3 || names < lines * 0.05) return null
+
+  return {
+    leftX: left,
+    speechX: left,
+    tolerance: DEFAULT_TOLERANCE,
+    source: 'fontStyle',
+    sampleSize: names,
+  }
+}
+
+/**
+ * Das Muster, nach dem gelesen wird.
+ *
+ * Der Schriftschnitt hat Vorrang: Wo fett und kursiv den Aufbau tragen, sagen
+ * die Spaltenpositionen nichts – dort beginnt jede Zeile links. Erst danach
+ * kommt das, was aus vorhandenen Blöcken gelernt oder aus dem Seitenaufbau
+ * geraten wurde.
+ */
+export function chooseProfile(
+  piecesByPage: Map<number, TextPiece[]>,
+  blocks: Block[],
+): LayoutProfile | null {
+  const byFont = fontStyleProfile(piecesByPage)
+  if (byFont) return byFont
+  return (blocks.length ? learnProfile(piecesByPage, blocks) : null) ?? guessProfile(piecesByPage)
+}
+
+export interface CastEntry {
+  role: string
+  /** Was die Liste als Zahl der Einsätze nennt. */
+  cues: number
+}
+
+/**
+ * Die Rollenliste des Stücks, wo es eine gibt: „Wilhelm Holme (138)“.
+ *
+ * Zum Vergleich, nicht zur Korrektur. Die Zahl stammt aus dem Verlag und
+ * stimmt nur, solange niemand das Stück gekürzt hat – als Anhaltspunkt taugt
+ * sie trotzdem: Wer sie um zwei verfehlt, hat vermutlich zwei Einsätze
+ * übersehen; wer sie um hundert verfehlt, hat ein anderes Problem.
+ */
+export function castList(piecesByPage: Map<number, TextPiece[]>): CastEntry[] {
+  const out: CastEntry[] = []
+  const seen = new Set<string>()
+
+  for (const pieces of piecesByPage.values()) {
+    for (const line of textLines(pieces)) {
+      const match = line.text.trim().match(/^([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.\-–— ]{1,40}?)\s*\((\d{1,4})\)$/)
+      if (!match) continue
+      const role = match[1].trim()
+      if (seen.has(role)) continue
+      seen.add(role)
+      out.push({ role, cues: Number(match[2]) })
+    }
+  }
+  return out
+}
+
 export function detectBlocks(
   piecesByPage: Map<number, TextPiece[]>,
   profile: LayoutProfile,
@@ -240,11 +670,64 @@ export function detectBlocks(
   startOrder: number,
   options: DetectOptions = { inlineDirections: 'strip', skipPagesWithoutDialogue: true },
 ): DetectionResult {
+  const pages = [...piecesByPage.keys()].sort((a, b) => a - b)
+  const cues = new Map<string, number>()
+  const { drafts, pagesWithoutDialogue } =
+    profile.source === 'fontStyle'
+      ? draftsByFontStyle(piecesByPage, options, cues)
+      : draftsByColumns(piecesByPage, profile, options, cues)
+
+  const blocks: Block[] = []
+  let skipped = 0
+  let order = startOrder
+
+  for (const d of drafts) {
+    const rect = d.rect ?? boundingBox(d.pieces)
+    if (!rect) continue
+    let text = d.textOverride ?? piecesToText(d.pieces)
+    if (d.type === 'line' && options.inlineDirections === 'strip') {
+      text = stripParentheticals(text)
+    }
+    if (text === '') continue
+    if (existing.some((b) => b.page === d.page && overlaps(b.rect, rect))) {
+      skipped++
+      continue
+    }
+    const block: Block = {
+      id: newBlockId(),
+      page: d.page,
+      rect,
+      order: 0, // filled in below, after a possible split
+      type: d.type,
+      speaker: d.type === 'direction' ? null : d.speaker,
+      text,
+    }
+    const parts =
+      d.type === 'line' && options.inlineDirections === 'split'
+        ? splitBlockAtParens(block)
+        : [block]
+    for (const p of parts) blocks.push({ ...p, order: order++ })
+  }
+
+  return { blocks, skipped, pagesScanned: pages.length, pagesWithoutDialogue, cues }
+}
+
+/**
+ * Das Spalten-Muster: Sprechername und Regie links, Sprechtext eingerückt.
+ *
+ * Unverändert das, was die Erkennung von Anfang an konnte – nur steht es
+ * jetzt neben dem zweiten Muster statt allein.
+ */
+function draftsByColumns(
+  piecesByPage: Map<number, TextPiece[]>,
+  profile: LayoutProfile,
+  options: DetectOptions,
+  cues: Map<string, number>,
+): { drafts: Draft[]; pagesWithoutDialogue: number[] } {
   const drafts: Draft[] = []
   const pagesWithoutDialogue: number[] = []
-  const pages = [...piecesByPage.keys()].sort((a, b) => a - b)
 
-  for (const page of pages) {
+  for (const page of [...piecesByPage.keys()].sort((a, b) => a - b)) {
     const pieces = piecesByPage.get(page) ?? []
     const pageStart = drafts.length
     let current: Draft | null = null
@@ -277,6 +760,7 @@ export function detectBlocks(
         const guess = splitInlineSpeaker(piecesToText(line.pieces))
         if (guess) {
           push()
+          cues.set(guess.speaker, (cues.get(guess.speaker) ?? 0) + 1)
           drafts.push({
             page,
             type: 'line',
@@ -304,6 +788,10 @@ export function detectBlocks(
 
         if (isSpeaker) {
           push()
+          cues.set(
+            leftText.replace(/[:.]$/, '').trim(),
+            (cues.get(leftText.replace(/[:.]$/, '').trim()) ?? 0) + 1,
+          )
           current = {
             page,
             type: 'line',
@@ -346,39 +834,7 @@ export function detectBlocks(
     }
   }
 
-  const blocks: Block[] = []
-  let skipped = 0
-  let order = startOrder
-
-  for (const d of drafts) {
-    const rect = boundingBox(d.pieces)
-    if (!rect) continue
-    let text = d.textOverride ?? piecesToText(d.pieces)
-    if (d.type === 'line' && options.inlineDirections === 'strip') {
-      text = stripParentheticals(text)
-    }
-    if (text === '') continue
-    if (existing.some((b) => b.page === d.page && overlaps(b.rect, rect))) {
-      skipped++
-      continue
-    }
-    const block: Block = {
-      id: newBlockId(),
-      page: d.page,
-      rect,
-      order: 0, // filled in below, after a possible split
-      type: d.type,
-      speaker: d.type === 'direction' ? null : d.speaker,
-      text,
-    }
-    const parts =
-      d.type === 'line' && options.inlineDirections === 'split'
-        ? splitBlockAtParens(block)
-        : [block]
-    for (const p of parts) blocks.push({ ...p, order: order++ })
-  }
-
-  return { blocks, skipped, pagesScanned: pages.length, pagesWithoutDialogue }
+  return { drafts, pagesWithoutDialogue }
 }
 
 function boundingBox(pieces: TextPiece[]): Rect | null {

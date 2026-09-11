@@ -16,12 +16,106 @@ export interface TextPiece {
   w: number
   h: number
   str: string
+  /** Set where the typeface was readable – see FontIndex. */
+  bold?: boolean
+  italic?: boolean
 }
 
-export async function extractPieces(page: PDFPageProxy): Promise<TextPiece[]> {
+/* ----------------------------------------------------------- Schriftschnitt */
+
+export interface FontStyle {
+  bold: boolean
+  italic: boolean
+}
+
+const PLAIN: FontStyle = { bold: false, italic: false }
+
+/** Was pdf.js über eine geladene Schrift preisgibt – mehr braucht es nicht. */
+interface LoadedFont {
+  name?: string
+  bold?: boolean
+  italic?: boolean
+}
+
+/**
+ * Welche Schrift auf einer Seite fett ist und welche kursiv.
+ *
+ * In manchen Stücken steckt der ganze Aufbau darin: der Sprechername fett, die
+ * Regieanweisung kursiv, sonst nichts – keine Spalten, keine Großschreibung.
+ * `getTextContent()` verrät davon nichts; es nennt nur Namen wie `g_d0_f4`,
+ * und `styles[…].fontFamily` sagt bloß „serif“.
+ *
+ * Den wirklichen Namen – `TimesNewRomanPS-BoldMT` – hat pdf.js erst, wenn es
+ * die Seite auch zeichnen könnte. `getOperatorList()` bringt ihn hervor, und
+ * das kostet: eine Fünftelsekunde je Seite. Deshalb wird eine Seite nur dann
+ * so weit gelesen, wenn auf ihr eine Schrift steht, die noch keine kennt –
+ * nach der ersten Textseite ist das fast nie mehr der Fall.
+ */
+export class FontIndex {
+  private readonly known = new Map<string, FontStyle>()
+
+  /** True, sobald zu einer Schrift etwas bekannt ist. */
+  has(font: string): boolean {
+    return this.known.has(font)
+  }
+
+  styleOf(font: string | undefined): FontStyle {
+    return (font && this.known.get(font)) || PLAIN
+  }
+
+  /** Holt nach, was von den genannten Schriften noch fehlt. */
+  async learn(page: PDFPageProxy, fonts: Iterable<string>): Promise<void> {
+    const fehlend = [...new Set(fonts)].filter((f) => f && !this.known.has(f))
+    if (fehlend.length === 0) return
+
+    try {
+      await page.getOperatorList()
+    } catch {
+      // Ohne die Namen bleibt es beim Aufbau über die Spalten; das ist kein
+      // Grund, die Erkennung abzubrechen.
+      for (const f of fehlend) this.known.set(f, PLAIN)
+      return
+    }
+
+    const objs = page.commonObjs as unknown as { get(id: string): unknown }
+    for (const f of fehlend) {
+      let font: LoadedFont | null = null
+      try {
+        font = objs.get(f) as LoadedFont
+      } catch {
+        font = null
+      }
+      const name = (font?.name ?? '').toLowerCase()
+      this.known.set(f, {
+        bold: font?.bold === true || /bold|black|heavy|semibold/.test(name),
+        italic: font?.italic === true || /italic|oblique/.test(name),
+      })
+    }
+  }
+}
+
+/**
+ * Anteil gedrehter Stücke, ab dem sie nicht mehr als Ausreißer gelten.
+ *
+ * Gedreht steht auf einer Seite fast immer das, was nicht dazugehört: der
+ * Sperrvermerk quer über den Rand, ein Wasserzeichen. Ist die Mehrheit
+ * gedreht, liegt die ganze Seite quer – dann wäre das Aussortieren falsch.
+ */
+const ROTATED_LIMIT = 0.25
+
+export async function extractPieces(page: PDFPageProxy, fonts?: FontIndex): Promise<TextPiece[]> {
   const viewport = page.getViewport({ scale: 1 })
   const content = await page.getTextContent()
+
+  if (fonts) {
+    await fonts.learn(
+      page,
+      content.items.map((item) => ('str' in item ? item.fontName : '')),
+    )
+  }
+
   const pieces: TextPiece[] = []
+  const upright: boolean[] = []
 
   for (const item of content.items) {
     if (!('str' in item) || typeof item.str !== 'string') continue
@@ -33,15 +127,23 @@ export async function extractPieces(page: PDFPageProxy): Promise<TextPiece[]> {
     const baseline = t[5]
     const top = viewport.height - baseline - height
 
+    const style = fonts?.styleOf(item.fontName) ?? PLAIN
     pieces.push({
       x: left / viewport.width,
       y: top / viewport.height,
       w: (item.width || 0) / viewport.width,
       h: height / viewport.height,
       str: item.str,
+      bold: style.bold,
+      italic: style.italic,
     })
+    // Waagerecht heißt: keine Drehung und keine Schräglage in der Matrix.
+    upright.push(Math.abs(t[1]) < 0.01 && Math.abs(t[2]) < 0.01)
   }
-  return pieces
+
+  const gedreht = upright.filter((u) => !u).length
+  if (gedreht === 0 || gedreht > pieces.length * ROTATED_LIMIT) return pieces
+  return pieces.filter((_, i) => upright[i])
 }
 
 /** True when the centre of a text piece lies inside the rectangle. */
@@ -145,9 +247,17 @@ export async function piecesForPages(
   onProgress?: (done: number, total: number) => void,
 ): Promise<Map<number, TextPiece[]>> {
   const result = new Map<number, TextPiece[]>()
+  // Einer für den ganzen Durchgang: die Namen der Schriften gelten im ganzen
+  // Dokument, also lernt Seite 40 nichts mehr, was Seite 7 schon wusste.
+  const fonts = new FontIndex()
+
   for (let i = 0; i < pages.length; i++) {
     const page = await doc.getPage(pages[i])
-    result.set(pages[i], await extractPieces(page))
+    result.set(pages[i], await extractPieces(page, fonts))
+    // Was pdf.js für diese Seite aufgebaut hat, wird nicht mehr gebraucht.
+    // Bei sechzig Seiten ist das der Unterschied zwischen ein paar Megabyte
+    // und dem ganzen Dokument im Speicher.
+    page.cleanup()
     onProgress?.(i + 1, pages.length)
   }
   return result

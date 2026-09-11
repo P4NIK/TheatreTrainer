@@ -1,6 +1,16 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
-import { detectBlocks, learnProfile, looksLikeSpeakerName, stripParentheticals } from './detect'
+import {
+  castList,
+  chooseProfile,
+  detectBlocks,
+  learnProfile,
+  looksLikeSpeakerName,
+  stripParentheticals,
+  type DetectOptions,
+} from './detect'
 import type { TextPiece } from './pdfText'
 import type { Block } from '../types'
 
@@ -278,5 +288,160 @@ describe('scripts without an indented speech column', () => {
     expect(blocks[0]).toMatchObject({ type: 'line', speaker: 'HUGO' })
     expect(blocks[0].text).toBe('Guten Abend, Sir Rowland.')
     expect(blocks[1].type).toBe('direction')
+  })
+})
+
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Ein Stück, das nicht über Spalten gegliedert ist.
+ *
+ * Die Vorlage sind drei echte Seiten aus „Wo zur Hölle geht's zum Himmel“:
+ * Seite 6 mit der Rollenliste, Seite 7 mit dem Anfang des ersten Aktes,
+ * Seite 8 mit dessen Fortsetzung. Alles darin beginnt am linken Rand; was
+ * Sprecher, Sprechtext und Regieanweisung unterscheidet, ist allein die
+ * Schrift – fett mit Doppelpunkt, aufrecht, kursiv.
+ *
+ * Die erwartete Zerlegung von Seite 7 ist keine Erfindung: Die dreizehn
+ * mittleren Blöcke stehen so in dem Export, den Sebastian von Hand angelegt
+ * hat. Die drei davor und die drei danach sind an derselben Seite geprüft.
+ */
+const VORLAGE = new URL('./fixtures/himmel.json', import.meta.url)
+
+type Reihe = [number, number, number, number, string, number, number]
+
+function himmelSeiten(): Map<number, TextPiece[]> {
+  const roh = JSON.parse(readFileSync(VORLAGE, 'utf8')) as Record<string, Reihe[]>
+  const out = new Map<number, TextPiece[]>()
+  for (const [seite, reihen] of Object.entries(roh)) {
+    out.set(
+      Number(seite),
+      reihen.map(([x, y, w, h, str, bold, italic]) => ({
+        x, y, w, h, str, bold: bold === 1, italic: italic === 1,
+      })),
+    )
+  }
+  return out
+}
+
+/** Typ, Sprecher und Text – mehr sagt der Vergleich nicht. */
+function kurz(blocks: Block[]): [string, string | null, string][] {
+  return blocks.map((b) => [b.type, b.speaker, b.text])
+}
+
+const SEITE_7: [string, string | null, string][] = [
+  // Drei Regieanweisungen als eigene Absätze, ganz kursiv gesetzt.
+  ['direction', null, 'Wilhelm betritt durch die mittige Tür die Bühne. Er trägt eine Malerlatzhose, die mit vielen Farbklecksen versehen ist, darunter ein Hemd, dazu Arbeiterschuhe und eine Schirmkappe. Er hat in der Hand eine Farbrolle. Er macht einen verwirrten Eindruck, schaut sich unsicher im Raum umher, verschließt die mittige Tür.'],
+  ['direction', null, 'Gisela kommt stürmisch durch die seitliche Tür. Sie trägt einen blauen, nahezu bodenlangen Überwurf. Darunter trägt sie Sneaker und gegebenenfalls ein T-Shirt, trägt eine blaue Lesebrille. Sie hat einen blauen Aktenordner bei sich, legt ihn recht unsanft auf dem Schreibtisch ab und setzt sich auf den Bürostuhl, ohne Wilhelm mit einem einzigen Blick zu würdigen. Sie öffnet den Ordner, blickt hinein und blättert ihn etwas mürrisch durch.'],
+  ['direction', null, 'Wilhelm räuspert sich diskret, um sich bemerkbar zu machen.'],
+  // Was Sebastian von Hand markiert hat – Wort für Wort aus seinem Export.
+  ['direction', null, 'blickt mit finsterem Blick von ihrem Ordner auf, über den Rand ihrer Lesebrille hinweg, fragt forsch'],
+  ['line', 'Gisela', 'Welche Nummer?'],
+  ['direction', null, 'sieht dann wieder in ihren Ordner'],
+  ['direction', null, 'irritiert, kommt etwas näher an den Schreibtisch heran'],
+  ['line', 'Wilhelm', 'Bitte, was?'],
+  ['direction', null, 'fordernder, ohne aufzusehen'],
+  ['line', 'Gisela', 'Ihre Nummer!'],
+  ['line', 'Wilhelm', 'Was denn für’ne Nummer?'],
+  ['direction', null, 'blickt ihn grimmig an'],
+  ['line', 'Gisela', 'Ihre Wartenummer!'],
+  ['direction', null, 'zuckt mit den Achseln'],
+  ['line', 'Wilhelm', 'Keine Ahnung.'],
+  ['line', 'Gisela', 'Ohne gültige Wartenummer haben Sie hier keinen Zugang.'],
+  // Und der Rest der Seite.
+  ['line', 'Wilhelm', 'Zu was habe ich keinen Zugang? Wo bin ich denn hier überhaupt?'],
+  ['line', 'Gisela', 'Fragen können nur in Verbindung mit einer zugangsberechtigenden Wartenummer beantwortet werden.'],
+  ['line', 'Wilhelm', 'Ich habe aber keine Nummer.'],
+]
+
+describe('Stücke, die über den Schriftschnitt gegliedert sind', () => {
+  const seiten = himmelSeiten()
+  const muster = chooseProfile(seiten, [])
+
+  const erkenne = (options: Partial<DetectOptions> = {}) =>
+    detectBlocks(seiten, muster!, [], 1, {
+      inlineDirections: 'split',
+      skipPagesWithoutDialogue: true,
+      ...options,
+    })
+
+  it('erkennt das Muster an fetten Namen mit Doppelpunkt', () => {
+    expect(muster?.source).toBe('fontStyle')
+    expect(muster!.sampleSize).toBeGreaterThan(10)
+  })
+
+  it('zerlegt die Seite so, wie sie von Hand markiert wurde', () => {
+    const seite7 = erkenne().blocks.filter((b) => b.page === 7)
+    expect(kurz(seite7)).toEqual(SEITE_7)
+  })
+
+  it('gibt allen Blöcken eines Absatzes dasselbe Rechteck', () => {
+    const blocks = erkenne().blocks.filter((b) => b.page === 7)
+    const absatz = blocks.filter((b) => b.text.startsWith('blickt mit finsterem') || b.text === 'Welche Nummer?' || b.text.startsWith('sieht dann wieder'))
+    expect(absatz).toHaveLength(3)
+    for (const b of absatz) expect(b.rect).toEqual(absatz[0].rect)
+    // Und das Rechteck liegt da, wo der Absatz steht.
+    expect(absatz[0].rect.y).toBeGreaterThan(0.4)
+    expect(absatz[0].rect.y).toBeLessThan(0.46)
+  })
+
+  it('lässt Titelei und Rollenliste vor dem ersten Akt liegen', () => {
+    const { blocks, pagesWithoutDialogue } = erkenne()
+    expect(blocks.some((b) => b.page === 6)).toBe(false)
+    expect(pagesWithoutDialogue).toContain(6)
+    // „Bühnenbild:“ ist fett und hat einen Doppelpunkt, ist aber keine Rolle.
+    expect(blocks.some((b) => b.speaker === 'Bühnenbild')).toBe(false)
+  })
+
+  it('wirft die Kopf- und Fußzeile des Verlags weg', () => {
+    const text = erkenne().blocks.map((b) => b.text).join(' ')
+    expect(text).not.toContain('Plausus')
+    expect(text).not.toContain('Andreas Wening')
+  })
+
+  it('kann Einschübe auch weglassen oder stehen lassen', () => {
+    const ohne = erkenne({ inlineDirections: 'strip' }).blocks.filter((b) => b.page === 7)
+    // Die eingeschobenen Anweisungen sind weg, die eigenständigen bleiben.
+    expect(ohne.some((b) => b.text === 'blickt ihn grimmig an')).toBe(false)
+    expect(ohne.some((b) => b.text.startsWith('Wilhelm räuspert sich'))).toBe(true)
+
+    const mit = erkenne({ inlineDirections: 'keep' }).blocks.filter((b) => b.page === 7)
+    expect(mit.some((b) => b.text === '(blickt ihn grimmig an) Ihre Wartenummer!')).toBe(true)
+  })
+
+  it('liest die Rollenliste des Stücks mit ihren Einsätzen', () => {
+    const liste = castList(seiten)
+    expect(liste).toContainEqual({ role: 'Wilhelm Holme', cues: 138 })
+    expect(liste).toContainEqual({ role: 'Philippus', cues: 85 })
+    expect(liste).toHaveLength(9)
+    // Die Kopfzeile enthält Telefonnummern in Klammern – keine Rollen.
+    expect(liste.some((e) => /\d/.test(e.role))).toBe(false)
+  })
+
+  it('zählt Einsätze und nicht Blöcke', () => {
+    const { cues, blocks } = erkenne()
+    expect(cues.get('Gisela')).toBe(13)
+    expect(cues.get('Wilhelm')).toBe(13)
+    // Auf diesen Seiten steht keine Regieanweisung mitten in einer Replik,
+    // also stimmen beide Zahlen hier ausnahmsweise überein.
+    expect(blocks.filter((b) => b.type === 'line')).toHaveLength(26)
+  })
+
+  /*
+   * Auf diesen beiden Seiten reden zwei Personen, und zwar gleich oft. Fällt
+   * ein Name aus, erbt die folgende Replik den vorigen Sprecher, und das
+   * Verhältnis kippt. Beim Bauen ist genau das passiert: ein „Wilhelm:“ am
+   * Seitenende galt als Fußzeile, weil derselbe Name auf zwei von drei Seiten
+   * unten stand.
+   */
+  it('lässt keinen Sprecher aus, der unten auf der Seite steht', () => {
+    const gesprochen = erkenne().blocks.filter((b) => b.type === 'line')
+    const je = new Map<string | null, number>()
+    for (const b of gesprochen) je.set(b.speaker, (je.get(b.speaker) ?? 0) + 1)
+
+    expect(gesprochen).toHaveLength(26)
+    expect(je.get('Gisela')).toBe(13)
+    expect(je.get('Wilhelm')).toBe(13)
+    expect(gesprochen.every((b) => b.speaker)).toBe(true)
   })
 })

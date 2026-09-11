@@ -101,10 +101,18 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 ### Blöcke automatisch erkennen
 
-Ein Theaterstück ist in Spalten gesetzt: Sprechername und Regieanweisungen am
-linken Rand, der Sprechtext eingerückt. Wo genau diese beiden Spalten liegen,
-macht jeder Verlag anders – deshalb ist nichts fest verdrahtet, sondern die App
-liest es aus deinen eigenen Blöcken ab.
+Theaterstücke werden auf zwei Arten gesetzt, und die App erkennt beide. Welche
+vorliegt, entscheidet sie selbst und schreibt es oben in den Dialog.
+
+**Muster 1: Spalten.** Sprechername und Regieanweisungen stehen am linken Rand,
+der Sprechtext eingerückt daneben. Wo genau diese beiden Spalten liegen, macht
+jeder Verlag anders – deshalb ist nichts fest verdrahtet, sondern die App liest
+es aus deinen eigenen Blöcken ab.
+
+> ```
+> HUGO        Guten Abend. Ich hatte nicht erwartet,
+>             dass Sie noch kommen würden.
+> ```
 
 **Vorgehen:** zwei, drei Blöcke von Hand ziehen – eine Sprechzeile und eine
 Regieanweisung genügen –, dann oben rechts auf „Automatisch erkennen“. Der
@@ -115,20 +123,54 @@ eine Vorschau, bevor etwas übernommen wird.
 Ohne gezeichnete Blöcke rät die App die Spalten aus dem Seitenaufbau. Das
 funktioniert oft, aber das Lernen ist deutlich zuverlässiger.
 
+**Muster 2: fett und kursiv.** Hier gibt es keine Spalten – alles beginnt am
+linken Rand, und die Gliederung steckt allein in der Schrift: der Sprechername
+**fett mit Doppelpunkt**, die Regieanweisung *kursiv*, mitten im Sprechtext in
+Klammern oder als eigener Absatz.
+
+> **Gisela:** *(blickt mit finsterem Blick von ihrem Ordner auf)* Welche
+> Nummer? *(sieht dann wieder in ihren Ordner)*
+
+Ein Block ist hier nicht eine Zeile in einer Spalte, sondern ein Absatz, und
+der zerfällt in so viele Blöcke, wie die Schrift darin wechselt – aus dem
+Beispiel oben werden drei: Regie, Sprechtext, Regie. Für dieses Muster braucht
+es keine gezeichneten Blöcke; es erkennt sich an den fetten Namen selbst.
+
+Den Schriftschnitt verrät pdf.js nicht von sich aus: `getTextContent()` nennt
+nur `g_d0_f4` und „serif“. Den wirklichen Namen der Schrift –
+`TimesNewRomanPS-BoldMT` – gibt es erst, wenn die Seite auch gezeichnet werden
+könnte. Deshalb wird `getOperatorList()` genau einmal je unbekannter Schrift
+aufgerufen: Nach der ersten Textseite kennt die App alle und liest den Rest des
+Stücks ohne diesen Umweg.
+
 Was dabei automatisch passiert:
 
 - Sprechername und Sprechtext werden getrennt, mehrzeilige Repliken
   zusammengefasst.
 - Eine Replik, die auf der nächsten Seite weiterläuft, behält ihren Sprecher.
 - Seitenzahlen und zentrierte Überschriften („Erster Akt“) werden ignoriert.
+- Laufende Kopf- und Fußzeilen fliegen raus: eine Zeile gilt als solche, wenn
+  sie am Seitenrand steht, auf mindestens drei Seiten und 60 % aller Seiten
+  vorkommt *und* dabei immer auf derselben Höhe. Die letzte Bedingung ist
+  wichtiger, als sie klingt – ohne sie hielt die App einen Sprechernamen, der
+  zweimal ans Seitenende rutschte, für eine Fußzeile und ließ ihn weg.
 - Seiten ohne Dialog – Titelei, Rechtehinweise, Personenverzeichnis – werden
-  übersprungen (abschaltbar).
+  übersprungen (abschaltbar). Beim Schriftschnitt-Muster gehört alles vor dem
+  ersten „1. Akt“ dazu: Dort steht „Bühnenbild:“ fett mit Doppelpunkt und sähe
+  sonst wie eine Rolle aus.
 - Eingeklammerte Einschübe wie „(kostet)“ fliegen aus dem Sprechtext. Zur
   Auswahl stehen außerdem „als eigene Blöcke“ – dann liest sie die
   Regie-Stimme – und „im Text lassen“ (siehe unten).
 - Bereiche, auf denen schon ein Block liegt, bleiben unangetastet. Ein zweiter
   Durchlauf ändert also nichts, und ein halb bearbeitetes Stück lässt sich
   auffüllen.
+
+**Abgleich mit der Rollenliste.** Viele Textbücher nennen vorn jede Rolle mit
+der Zahl ihrer Einsätze: „Wilhelm Holme (138)“. Wo es die gibt, stellt der
+Dialog sie neben die erkannten Einsätze. Das ist ein Hinweis und keine Vorgabe
+– wer sein Textbuch gekürzt hat, hat weniger, und die Erkennung ist deshalb
+nicht schlechter. Als Fehlerzeiger taugt der Vergleich trotzdem: Wer um eins
+danebenliegt, hat vermutlich einen Einsatz übersehen.
 
 Anschließend wird die Vorlese-Reihenfolge nach Seite und Position neu vergeben.
 Bei mehrspaltigem Satz kann das falsch sein – dann in der Blockliste per
