@@ -15,7 +15,15 @@ import { generatedUrl } from './generated'
 
 /** Main thread to worker. */
 export type ToStt =
-  | { id: number; type: 'load'; model: string; wasmBase: string; modelHost?: string }
+  | {
+      id: number
+      type: 'load'
+      model: string
+      wasmBase: string
+      modelHost?: string
+      /** Genauigkeit des Encoders – siehe stt.ts. */
+      precision: 'fp32' | 'q8'
+    }
   | { id: number; type: 'transcribe'; audio: Float32Array }
 
 /**
@@ -97,8 +105,9 @@ async function load(
 
   return pipeline('automatic-speech-recognition', message.model, {
     device: 'wasm',
-    // Encoder in full precision, decoder small – see the note in stt.ts.
-    dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+    // Encoder so genau, wie das Gerät es verträgt, Decoder klein – siehe die
+    // Anmerkung in stt.ts.
+    dtype: { encoder_model: message.precision, decoder_model_merged: 'q4' },
     progress_callback: (progress: { status: string; file?: string; loaded?: number; total?: number }) => {
       if (progress.status !== 'progress') return
       reply({

@@ -619,6 +619,162 @@ export function markerCheck(before: MarkerState, now: Date, used: number): Check
   }
 }
 
+/* ------------------------------------------------------- Neustart-Protokoll */
+
+/**
+ * Warum die Seite neu geladen hat.
+ *
+ * Auf dem Telefon sieht beides gleich aus: Wer die App weglegt und später
+ * zurückkommt, findet sie von vorn – und wer mitten im Proben aus der App
+ * fliegt, auch. Das Erste ist normal, iOS wirft Web-Apps im Hintergrund aus
+ * dem Speicher. Das Zweite ist ein Fehler.
+ *
+ * Unterscheiden lässt es sich an einem Abschied: Beim Weglegen schickt der
+ * Browser `pagehide`, beim Abschuss nichts. Also wird jeder Start notiert und
+ * beim Verlassen abgehakt; ein Eintrag ohne Haken ist ein Abbruch. Alle
+ * dreißig Sekunden kommt ein Lebenszeichen dazu, damit auch dasteht, *wann*
+ * es passiert ist und wo.
+ *
+ * Das Protokoll liegt in `localStorage` und nicht in OPFS: `pagehide` ist der
+ * letzte Augenblick, in dem noch etwas geschrieben werden kann, und dort
+ * zählt nur, was sofort schreibt.
+ */
+
+export interface StartEntry {
+  /** Wann die App startete. */
+  at: string
+  /** Letztes Lebenszeichen. */
+  alive: string
+  /** Gesetzt, wenn die Seite ordentlich verlassen wurde. */
+  left?: string
+  /** Welche Ansicht zuletzt offen war. */
+  where: string
+}
+
+const LOG_KEY = 'theater-starts'
+/** Mehr als zwanzig Starts sagen nichts mehr, was die letzten zwanzig nicht sagen. */
+const LOG_MAX = 20
+const HEARTBEAT_MS = 30_000
+
+function readLog(): StartEntry[] {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(LOG_KEY) ?? '[]') as StartEntry[]
+    return Array.isArray(raw) ? raw.filter((e) => e && typeof e.at === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeLog(entries: StartEntry[]): void {
+  try {
+    window.localStorage.setItem(LOG_KEY, JSON.stringify(entries.slice(-LOG_MAX)))
+  } catch {
+    // privates Fenster, voller Speicher – dann eben ohne Protokoll
+  }
+}
+
+/** Ändert den laufenden Eintrag, wenn es einen gibt. */
+function updateCurrent(change: (entry: StartEntry) => void): void {
+  const log = readLog()
+  const last = log[log.length - 1]
+  if (!last) return
+  change(last)
+  writeLog(log)
+}
+
+let noted = false
+
+/** Notiert diesen Start. Einmal beim Hochfahren der App aufzurufen. */
+export function noteStart(): void {
+  if (noted) return
+  noted = true
+
+  const jetzt = new Date().toISOString()
+  const log = readLog()
+  log.push({ at: jetzt, alive: jetzt, where: window.location.hash || '#/' })
+  writeLog(log)
+
+  const lebenszeichen = () => updateCurrent((e) => { e.alive = new Date().toISOString() })
+  const merkeOrt = () => updateCurrent((e) => { e.where = window.location.hash || '#/' })
+
+  window.setInterval(lebenszeichen, HEARTBEAT_MS)
+  window.addEventListener('hashchange', merkeOrt)
+  window.addEventListener('pagehide', () => {
+    updateCurrent((e) => {
+      e.alive = new Date().toISOString()
+      e.where = window.location.hash || '#/'
+      if (!e.left) e.left = e.alive
+    })
+  })
+}
+
+/** Was das Protokoll hergibt – auch für die Anzeige in der Prüfung. */
+export function startLog(): StartEntry[] {
+  return readLog()
+}
+
+/** Aus einer Route wird ein Ort, den man wiedererkennt. */
+function placeOf(hash: string): string {
+  if (hash.startsWith('#/p/')) return 'in einem Stück'
+  if (hash.startsWith('#/technik')) return 'in der Technik-Prüfung'
+  return 'in der Stückeliste'
+}
+
+function clock(value: string): string {
+  const at = new Date(value)
+  return Number.isNaN(at.getTime())
+    ? '?'
+    : at.toLocaleString('de-DE', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export function restartCheck(now = new Date(), log = readLog()): Check {
+  const key = 'starts'
+  const title = 'Neustarts'
+  // Der laufende Eintrag hat naturgemäß noch keinen Abschied.
+  const frueher = log.slice(0, -1)
+
+  if (frueher.length === 0) {
+    return {
+      key,
+      title,
+      status: 'ok',
+      detail: 'Noch kein zweiter Start aufgezeichnet. Ab jetzt steht hier, ob die App beendet wurde oder abgestürzt ist.',
+    }
+  }
+
+  const abbrueche = frueher.filter((e) => !e.left)
+  const stunden = Math.max(1, Math.round((now.getTime() - new Date(frueher[0].at).getTime()) / 3_600_000))
+  const zeitraum =
+    stunden < 48
+      ? stunden === 1
+        ? 'in der letzten Stunde'
+        : `in den letzten ${stunden} Stunden`
+      : `in den letzten ${Math.round(stunden / 24)} Tagen`
+  const bilanz = `${frueher.length === 1 ? '1 Start' : `${frueher.length} Starts`} ${zeitraum}`
+
+  if (abbrueche.length === 0) {
+    return {
+      key,
+      title,
+      status: 'ok',
+      detail: `${bilanz} – keiner davon mitten im Betrieb abgebrochen, jedes Mal wurde die Seite vorher ordentlich verlassen. Dass die App nach dem Zurückkommen trotzdem von vorn beginnt, ist iOS: Web-Apps im Hintergrund werden aus dem Speicher geworfen und beim nächsten Antippen neu geladen.`,
+    }
+  }
+
+  const letzter = abbrueche[abbrueche.length - 1]
+  const dauer = Math.round((new Date(letzter.alive).getTime() - new Date(letzter.at).getTime()) / 60_000)
+  return {
+    key,
+    title,
+    status: 'warn',
+    detail:
+      `${bilanz}, davon ${abbrueche.length === 1 ? 'einer' : `${abbrueche.length}`} ohne Abschied – da hat der Browser die Seite mitten im Betrieb beendet. ` +
+      `Zuletzt am ${clock(letzter.alive)}, nach ${dauer < 1 ? 'weniger als einer Minute' : `${dauer} Minuten`}, ${placeOf(letzter.where)}.`,
+    advice:
+      'Das ist kein normales Weglegen. Sag mir, was zu dem Zeitpunkt lief – die Uhrzeit und der Ort oben sind der Faden, an dem sich ziehen lässt.',
+  }
+}
+
 /* ------------------------------------------------------------------ bericht */
 
 /** The whole report as text, for pasting into a message. */

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { freeVoices } from '../../lib/engine'
 import { stt, WHISPER_BYTES } from '../../lib/stt'
 
 export interface SttState {
@@ -50,6 +51,16 @@ export function useStt(): SttState {
     if (stt.ready() || loading) return
     setLoading(true)
     setError('')
+    /*
+     * Erst Platz machen, dann laden.
+     *
+     * Die Stimme liegt im Sprach-Worker und wiegt 63 MB; das Erkenner-Netz
+     * wird gleich daneben aufgebaut. Auf dem Telefon beendet Safari die Seite,
+     * wenn beides zusammenkommt. Die Stimme ist die, die sich billiger
+     * zurückholen lässt – sie liegt auf der Platte und ist in einer Sekunde
+     * wieder da.
+     */
+    freeVoices()
     stt
       .ensure()
       .then(() => setReady(true))

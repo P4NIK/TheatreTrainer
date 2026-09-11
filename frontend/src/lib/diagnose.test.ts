@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   daysApart,
+  restartCheck,
   formatBytes,
   markerCheck,
   nextMarker,
@@ -9,6 +10,7 @@ import {
   summary,
   type Check,
   type Marker,
+  type StartEntry,
 } from './diagnose'
 
 const MB = 1024 * 1024
@@ -134,5 +136,55 @@ describe('summary und reportText', () => {
     expect(text).toContain('[ok] Erstes: geht')
     expect(text).toContain('[!] Zweites: ginge besser')
     expect(text).toContain('→ so geht es besser')
+  })
+})
+
+describe('restartCheck', () => {
+  const jetzt = new Date('2026-09-11T17:30:00Z')
+  const start = (min: number, over: Partial<StartEntry> = {}): StartEntry => {
+    const at = new Date(jetzt.getTime() - min * 60_000).toISOString()
+    return { at, alive: at, where: '#/', left: at, ...over }
+  }
+
+  it('sagt nichts, solange es nur diesen einen Start gibt', () => {
+    expect(restartCheck(jetzt, []).status).toBe('ok')
+    expect(restartCheck(jetzt, [start(0)]).detail).toContain('Noch kein zweiter Start')
+  })
+
+  /*
+   * Wer die App weglegt, verabschiedet sich über `pagehide`. Dass iOS sie
+   * danach aus dem Speicher wirft, ist normal – und keine Warnung wert.
+   */
+  it('hält ordentliches Verlassen für normal', () => {
+    const check = restartCheck(jetzt, [start(180), start(120), start(60), start(0)])
+    expect(check.status).toBe('ok')
+    expect(check.detail).toContain('3 Starts')
+    expect(check.detail).toContain('iOS')
+  })
+
+  it('erkennt den Abbruch mitten im Betrieb', () => {
+    const abbruch: StartEntry = {
+      at: new Date(jetzt.getTime() - 65 * 60_000).toISOString(),
+      alive: new Date(jetzt.getTime() - 61 * 60_000).toISOString(),
+      where: '#/p/hamlet',
+      // kein left – die Seite war einfach weg
+    }
+    const check = restartCheck(jetzt, [start(180), abbruch, start(0)])
+    expect(check.status).toBe('warn')
+    expect(check.detail).toContain('ohne Abschied')
+    expect(check.detail).toContain('4 Minuten')
+    expect(check.detail).toContain('in einem Stück')
+    expect(check.advice).toBeTruthy()
+  })
+
+  it('zählt mehrere Abbrüche', () => {
+    const weg = (min: number): StartEntry => ({
+      at: new Date(jetzt.getTime() - min * 60_000).toISOString(),
+      alive: new Date(jetzt.getTime() - (min - 2) * 60_000).toISOString(),
+      where: '#/technik',
+    })
+    const check = restartCheck(jetzt, [weg(300), weg(200), start(100), start(0)])
+    expect(check.detail).toContain('davon 2 ohne Abschied')
+    expect(check.detail).toContain('in der Technik-Prüfung')
   })
 })

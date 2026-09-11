@@ -95,6 +95,18 @@ export function closeOtherEngines(projectId?: string): void {
   }
 }
 
+/**
+ * Gibt die geladenen Stimmen frei, ohne die Zuordnung zu verlieren.
+ *
+ * Für den Augenblick, in dem die Spracherkennung aufgebaut wird: Dann liegen
+ * sonst beide Netze gleichzeitig im Speicher, und auf dem Telefon ist genau
+ * das eines zu viel. Die Stimme kommt beim nächsten Abspielen von selbst
+ * zurück – sie liegt ja auf der Platte.
+ */
+export function freeVoices(): void {
+  for (const engine of engines.values()) engine.pool.close()
+}
+
 /** Ends one engine – after its project has been deleted, say. */
 export function closeEngine(projectId: string): void {
   engines.get(projectId)?.close()
