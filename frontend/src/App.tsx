@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { AppShell, Anchor, Group, Loader, Text } from '@mantine/core'
-import { IconMasksTheater } from '@tabler/icons-react'
+import { ActionIcon, AppShell, Anchor, Group, Loader, Text, Tooltip } from '@mantine/core'
+import { IconHelp, IconMasksTheater } from '@tabler/icons-react'
 
 import { noteStart, touchMarker } from './lib/diagnose'
+import { askForTour } from './lib/tour'
 import ProjectsPage from './pages/ProjectsPage'
 
 /**
@@ -69,9 +70,25 @@ export default function App() {
               Theater-Vorleser
             </Anchor>
           </Group>
-          <Text size="xs" c="dimmed" visibleFrom="sm">
-            im Browser · offline · ohne Server
-          </Text>
+          <Group gap="xs" wrap="nowrap">
+            <Text size="xs" c="dimmed" visibleFrom="sm">
+              im Browser · offline · ohne Server
+            </Text>
+            {/*
+              Das Fragezeichen weiß nicht, welche Einführung hierher passt –
+              die Seite darunter weiß es und meldet sich (siehe lib/tour.ts).
+            */}
+            <Tooltip label="Einführung zu dieser Ansicht">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                onClick={askForTour}
+                aria-label="Einführung starten"
+              >
+                <IconHelp size={20} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Group>
       </AppShell.Header>
 

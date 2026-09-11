@@ -225,6 +225,7 @@ export default function PdfCanvasEditor({
           </Badge>
           {finger && (
             <Button
+              data-tour="markieren"
               size="compact-sm"
               variant={markieren ? 'filled' : 'default'}
               leftSection={<IconPencil size={16} />}

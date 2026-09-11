@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMediaQuery } from '@mantine/hooks'
 import {
   ActionIcon,
   Alert,
@@ -26,6 +27,8 @@ import {
 } from '@tabler/icons-react'
 
 import { closeEngine } from '../lib/engine'
+import { hasSeen, markSeen, onAskForTour, stepsFor } from '../lib/tour'
+import Tour from '../components/Tour/Tour'
 import { store } from '../lib/store'
 import type { Project } from '../types'
 
@@ -41,6 +44,18 @@ export default function ProjectsPage({ onOpen }: Props) {
   const [pdf, setPdf] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  /*
+   * Die Einführung: beim allerersten Besuch von selbst, später über das
+   * Fragezeichen im Seitenkopf.
+   */
+  const touch = useMediaQuery('(pointer: coarse)') ?? false
+  const [tour, setTour] = useState(() => !hasSeen('stuecke'))
+  useEffect(() => onAskForTour(() => setTour(true)), [])
+  const tourZu = () => {
+    markSeen('stuecke')
+    setTour(false)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -128,13 +143,18 @@ export default function ProjectsPage({ onOpen }: Props) {
         <Title order={2}>Meine Stücke</Title>
         <Group gap="xs">
           <Button
+            data-tour="sicherung"
             variant="default"
             leftSection={<IconUpload size={18} />}
             onClick={() => fileInput.current?.click()}
           >
             Sicherungskopie öffnen
           </Button>
-          <Button leftSection={<IconFilePlus size={18} />} onClick={() => setModalOpen(true)}>
+          <Button
+            data-tour="neues-projekt"
+            leftSection={<IconFilePlus size={18} />}
+            onClick={() => setModalOpen(true)}
+          >
             Neues Projekt
           </Button>
         </Group>
@@ -214,6 +234,7 @@ export default function ProjectsPage({ onOpen }: Props) {
         nichts – aber wer den Browser-Speicher löscht, löscht sie mit. Eine Sicherungskopie ist eine
         Datei und dauert einen Klick.{' '}
         <Anchor
+          data-tour="technik"
           size="xs"
           component="button"
           type="button"
@@ -222,6 +243,8 @@ export default function ProjectsPage({ onOpen }: Props) {
           Läuft alles auf diesem Gerät?
         </Anchor>
       </Text>
+
+      {tour && <Tour steps={stepsFor('stuecke', touch)} onClose={tourZu} />}
 
       <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Neues Projekt" centered>
         <Stack>

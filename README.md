@@ -81,6 +81,24 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 ## Bedienung
 
+Beim ersten Besuch führt eine kurze Einführung durch das, was man nicht sehen
+kann: dass Blöcke gezogen werden, wo die eigene Rolle markiert wird und was
+Hörfassung von Lernmodus unterscheidet. Drei Touren, je drei bis fünf Schritte,
+jeweils dort, wo man gerade steht – Stückeliste, Editor, Proben. Die dritte
+startet, wenn der Lernmodus zum ersten Mal geöffnet wird, und blättert dabei
+selbst durch die Reiter.
+
+Abbrechen geht immer; das Fragezeichen oben rechts startet die Einführung zur
+gerade offenen Ansicht erneut. Wer die App weitergibt, setzt sie in der
+Technik-Prüfung unter *Einführungen zurücksetzen* für den nächsten Menschen
+wieder auf Anfang. Gemerkt wird das pro Browser, wie alles hier.
+
+Keine fremde Bibliothek dafür: intro.js steht seit Fassung 3 unter der AGPL und
+würde dieses Projekt mitziehen, und die schwierige Hälfte – ein Kasten, der
+neben einem Element steht – liegt in Mantine schon bereit. Die Schritte stehen
+als Text in `src/lib/tour.ts`, angeheftet an `data-tour`-Attribute; das Loch im
+abgedunkelten Bild ist ein Kästchen mit sehr großem Schatten.
+
 1. **Projekt anlegen** – Name eingeben, PDF hochladen.
 2. **Editor** – mit der Maus ein Rechteck um eine Textzeile ziehen. Der Text
    erscheint im Dialog, Sprecher und Typ prüfen, „Hinzufügen“.
@@ -543,7 +561,7 @@ frontend/
   public/wasm/        # espeak-ng, onnxruntime – von npm run wasm gefüllt
   public/sw.js        # Service Worker: nach dem ersten Besuch offline
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
-                      # AutoDetect, SynthesizePanel, Rehearsal
+                      # AutoDetect, SynthesizePanel, Rehearsal, Tour
   src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf,
                       # Karteikarten (Leitner + Sitzungsqueue),
                       # Wortvergleich (Levenshtein + Kölner Phonetik),

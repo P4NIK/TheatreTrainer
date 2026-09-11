@@ -431,6 +431,7 @@ export default function RehearsalPanel({
             description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst."
           />
           <Switch
+            data-tour="auswerten"
             checked={options.analyze}
             onChange={(e) => {
               const an = e.currentTarget.checked
@@ -520,6 +521,7 @@ export default function RehearsalPanel({
 
           <Group>
             <Button
+              data-tour="probe-starten"
               leftSection={<IconPlayerPlay size={18} />}
               onClick={() => void start(startInfo.index)}
               loading={starting}

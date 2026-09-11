@@ -172,6 +172,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
 
           <Group>
             <Button
+              data-tour="audio-erzeugen"
               leftSection={<IconPlayerPlay size={18} />}
               onClick={start}
               loading={running}
