@@ -291,6 +291,43 @@ export function cardPlacement(options: {
   }
 }
 
+/**
+ * Muss zu diesem Ziel überhaupt gescrollt werden?
+ *
+ * `scrollIntoView` rollt immer, auch wenn das Ziel längst im Bild steht – und
+ * jede dieser überflüssigen Bewegungen sieht aus wie ein Sprung. Steht das Ziel
+ * mit etwas Luft zu beiden Rändern da, bleibt die Seite also, wo sie ist.
+ *
+ * Ein Ziel, das höher ist als das Fenster (das PDF zum Beispiel), passt nie
+ * ganz hinein; dort genügt es, wenn irgendein Teil davon zu sehen ist.
+ */
+export function needsScroll(
+  box: Kasten,
+  view: { width: number; height: number },
+  luft = 60,
+): boolean {
+  if (box.height > view.height - 2 * luft) {
+    return box.top > view.height - luft || box.top + box.height < luft
+  }
+  return box.top < luft || box.top + box.height > view.height - luft
+}
+
+/**
+ * Steht das Ziel noch an derselben Stelle wie eben?
+ *
+ * Auf ganze Bildpunkte gerundet, weil ein weich rollendes Fenster in der
+ * letzten Nachkommastelle noch zittert, wenn es längst steht.
+ */
+export function sameSpot(a: Kasten | null, b: Kasten | null): boolean {
+  if (!a || !b) return !a && !b
+  return (
+    Math.round(a.top) === Math.round(b.top) &&
+    Math.round(a.left) === Math.round(b.left) &&
+    Math.round(a.width) === Math.round(b.width) &&
+    Math.round(a.height) === Math.round(b.height)
+  )
+}
+
 /* ------------------------------------------------------------- Gedächtnis */
 
 const SEEN_KEY = 'theater-touren'

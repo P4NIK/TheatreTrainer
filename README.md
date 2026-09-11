@@ -98,6 +98,13 @@ gerade offenen Ansicht erneut. Wer die App weitergibt, setzt sie in der
 Technik-Prüfung unter *Einführungen zurücksetzen* für den nächsten Menschen
 wieder auf Anfang. Gemerkt wird das pro Browser, wie alles hier.
 
+Ein Schritt taucht erst auf, wenn er steht. Zuerst wurde der Kasten sofort
+gezeichnet, dann rollte die Seite zum Ziel, und die nächste Messung schob ihn
+nach – zwei Sprünge für einen Schritt. Jetzt wird beim Schrittwechsel jedes
+Bild gemessen und erst nach drei gleichen Messungen eingeblendet; gerollt wird
+überhaupt nur, wenn das Ziel nicht ohnehin schon im Bild steht (`needsScroll`).
+Am Rechner bleibt die Seite damit bei 19 von 20 Schritten einfach stehen.
+
 Keine fremde Bibliothek dafür: intro.js steht seit Fassung 3 unter der AGPL und
 würde dieses Projekt mitziehen, und die schwierige Hälfte – ein Kasten, der
 neben einem Element steht – liegt in Mantine schon bereit. Die Schritte stehen

@@ -10,6 +10,13 @@
  * Ereignisse zu denken, wird die Stelle viermal in der Sekunde nachgemessen.
  * Das kostet nichts und sitzt immer.
  *
+ * Beim Schrittwechsel aber wird jedes Bild gemessen, und der Kasten bleibt so
+ * lange unsichtbar, bis sich nichts mehr rührt. Vorher stand er zweimal: einmal
+ * dort, wo das Ziel noch war, dann rollte die Seite hin, und die nächste
+ * Messung schob ihn an die richtige Stelle. Einmal auftauchen ist besser als
+ * zweimal springen – und wo das Ziel ohnehin schon im Bild steht, rollt die
+ * Seite jetzt gar nicht mehr.
+ *
  * Der Kasten misst dabei auch sich selbst. Mit einer angenommenen Höhe zu
  * rechnen ging schief, sobald der Text länger oder das Fenster niedriger war
  * als gedacht: Dann stand der Kasten halb über dem oberen Rand, und die
@@ -22,7 +29,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useMediaQuery } from '@mantine/hooks'
 import { Badge, Button, Card, Group, Portal, Stack, Text } from '@mantine/core'
 
-import { cardPlacement, RAND, type TourStep } from '../../lib/tour'
+import { cardPlacement, needsScroll, RAND, sameSpot, type Kasten, type TourStep } from '../../lib/tour'
 
 interface Props {
   steps: TourStep[]
@@ -35,7 +42,13 @@ const PADDING = 6
 
 export default function Tour({ steps, onClose }: Props) {
   const [index, setIndex] = useState(0)
-  const [box, setBox] = useState<DOMRect | null>(null)
+  const [box, setBox] = useState<Kasten | null>(null)
+  /*
+   * Nicht „ist es so weit“, sondern „für welchen Schritt“: So fällt der
+   * Kasten beim Weiterblättern von selbst wieder auf unsichtbar zurück,
+   * ohne dass ihn jemand zurücksetzen müsste.
+   */
+  const [bereitFuer, setBereitFuer] = useState(-1)
   const [hoehe, setHoehe] = useState(200)
   const schmal = useMediaQuery('(max-width: 62em)') ?? false
   const karte = useRef<HTMLDivElement>(null)
@@ -50,24 +63,62 @@ export default function Tour({ steps, onClose }: Props) {
 
   const zurueck = useCallback(() => setIndex((i) => Math.max(0, i - 1)), [])
 
+  const bereit = bereitFuer === index
+
   useEffect(() => {
     if (!step) return
-    let ersteMessung = true
 
-    const messen = () => {
+    let bild = 0
+    let takt = 0
+    let ruhig = 0
+    let erste = true
+    let vorher: Kasten | null = null
+    let gescrollt = false
+    // Ein Ziel, das gar nicht zur Ruhe kommt, darf die Tour nicht aufhalten.
+    const frist = Date.now() + 1500
+
+    const messen = (): Kasten | null => {
       const ziel = step.target
         ? document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`)
         : null
-      setBox(ziel ? ziel.getBoundingClientRect() : null)
-      if (ziel && ersteMessung) {
-        ersteMessung = false
-        ziel.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (!ziel) {
+        setBox(null)
+        return null
+      }
+      const r = ziel.getBoundingClientRect()
+      const jetzt: Kasten = { top: r.top, left: r.left, width: r.width, height: r.height }
+      setBox((alt) => (sameSpot(alt, jetzt) ? alt : jetzt))
+      if (!gescrollt) {
+        gescrollt = true
+        const sicht = { width: window.innerWidth, height: window.innerHeight }
+        if (needsScroll(jetzt, sicht)) ziel.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+      return jetzt
+    }
+
+    /*
+     * Bis die Seite steht, wird jedes Bild gemessen; drei Messungen an
+     * derselben Stelle gelten als „steht“. Danach genügt viermal je Sekunde,
+     * um einer Liste zu folgen, die sich später noch einmal rührt.
+     */
+    const einschwingen = () => {
+      const jetzt = messen()
+      ruhig = !erste && sameSpot(vorher, jetzt) ? ruhig + 1 : 0
+      erste = false
+      vorher = jetzt
+      if (ruhig >= 3 || Date.now() > frist) {
+        setBereitFuer(index)
+        takt = window.setInterval(messen, 250)
+      } else {
+        bild = requestAnimationFrame(einschwingen)
       }
     }
 
-    messen()
-    const takt = window.setInterval(messen, 250)
-    return () => window.clearInterval(takt)
+    einschwingen()
+    return () => {
+      cancelAnimationFrame(bild)
+      if (takt) window.clearInterval(takt)
+    }
   }, [index, step])
 
   useEffect(() => {
@@ -80,8 +131,10 @@ export default function Tour({ steps, onClose }: Props) {
     return () => window.removeEventListener('keydown', taste)
   }, [onClose, weiter, zurueck])
 
+  // preventScroll: Sonst rollt der Browser zum Kasten, und zwei Bewegungen
+  // gleichzeitig sind genau der Sprung, den die Messung oben vermeiden soll.
   useEffect(() => {
-    karte.current?.focus()
+    karte.current?.focus({ preventScroll: true })
   }, [index])
 
   /*
@@ -129,7 +182,9 @@ export default function Tour({ steps, onClose }: Props) {
             outline: '2px solid var(--mantine-color-indigo-4)',
             pointerEvents: 'none',
             zIndex: 300,
-            transition: 'all 120ms ease-out',
+            // Während die Seite rollt, klebt das Loch am Ziel; erst danach
+            // darf es weich nachziehen.
+            transition: bereit ? 'all 120ms ease-out' : 'none',
           }}
         />
       ) : (
@@ -154,6 +209,12 @@ export default function Tour({ steps, onClose }: Props) {
           maxHeight: `calc(100vh - ${2 * RAND}px)`,
           display: 'flex',
           flexDirection: 'column',
+          // Gezeichnet ist er von Anfang an – nur zu sehen erst, wenn er
+          // dort steht, wo er bleiben wird. So misst sich seine Höhe auch
+          // schon, während die Seite noch rollt.
+          opacity: bereit ? 1 : 0,
+          pointerEvents: bereit ? undefined : 'none',
+          transition: 'opacity 140ms ease-out',
           ...platz,
         }}
       >

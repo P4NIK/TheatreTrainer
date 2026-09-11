@@ -5,7 +5,9 @@ import {
   forgetTours,
   hasSeen,
   markSeen,
+  needsScroll,
   RAND,
+  sameSpot,
   seenTours,
   stepsFor,
   TOURS,
@@ -73,6 +75,54 @@ describe('die Touren selbst', () => {
     expect(stepsFor('stuecke', false).length).toBe(3)
     // @ts-expect-error – absichtlich falscher Name
     expect(stepsFor('gibtsnicht', false)).toEqual([])
+  })
+})
+
+/*
+ * Der Kasten sprang zweimal: erst stand er an der alten Stelle des Ziels, dann
+ * rollte die Seite hin, dann rückte er nach. Beides hat einen Grund – gerollt
+ * wurde auch dorthin, wo längst nichts zu rollen war, und angezeigt wurde,
+ * bevor irgendetwas stillstand.
+ */
+describe('needsScroll', () => {
+  const view = { width: 390, height: 664 }
+  const ziel = (top: number, height = 40): Kasten => ({ top, left: 20, width: 200, height })
+
+  it('lässt die Seite stehen, wo das Ziel schon bequem im Bild ist', () => {
+    expect(needsScroll(ziel(300), view)).toBe(false)
+    expect(needsScroll(ziel(60), view)).toBe(false)
+    expect(needsScroll(ziel(564), view)).toBe(false)
+  })
+
+  it('rollt zu allem, was am Rand klebt oder draußen steht', () => {
+    expect(needsScroll(ziel(-100), view)).toBe(true)
+    expect(needsScroll(ziel(10), view)).toBe(true)
+    expect(needsScroll(ziel(640), view)).toBe(true)
+    expect(needsScroll(ziel(2000), view)).toBe(true)
+  })
+
+  /* Das PDF ist höher als jedes Telefon – es ganz ins Bild zu rollen ist
+     unmöglich, und der Versuch verschöbe die Seite bei jedem Schritt. */
+  it('gibt sich bei hohen Zielen mit einem Stück zufrieden', () => {
+    expect(needsScroll(ziel(0, 2000), view)).toBe(false)
+    expect(needsScroll(ziel(-1500, 2000), view)).toBe(false)
+    expect(needsScroll(ziel(-2000, 2000), view)).toBe(true)
+    expect(needsScroll(ziel(700, 2000), view)).toBe(true)
+  })
+})
+
+describe('sameSpot', () => {
+  const a: Kasten = { top: 100, left: 20, width: 200, height: 40 }
+
+  it('übersieht das Zittern einer weich rollenden Seite', () => {
+    expect(sameSpot(a, { ...a, top: 100.4 })).toBe(true)
+    expect(sameSpot(a, { ...a, top: 101 })).toBe(false)
+  })
+
+  it('zählt „kein Ziel“ als eigene Stelle', () => {
+    expect(sameSpot(null, null)).toBe(true)
+    expect(sameSpot(a, null)).toBe(false)
+    expect(sameSpot(null, a)).toBe(false)
   })
 })
 
