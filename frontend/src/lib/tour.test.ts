@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { forgetTours, hasSeen, markSeen, seenTours, stepsFor, TOURS } from './tour'
+import {
+  cardPlacement,
+  forgetTours,
+  hasSeen,
+  markSeen,
+  RAND,
+  seenTours,
+  stepsFor,
+  TOURS,
+  type Kasten,
+} from './tour'
 
 /** Ein localStorage, das sich wie eines benimmt – Node hat keines. */
 function fakeStorage() {
@@ -86,5 +96,78 @@ describe('was schon gesehen wurde', () => {
     })
     expect(seenTours()).toEqual([])
     expect(() => markSeen('proben')).not.toThrow()
+  })
+})
+
+/*
+ * Der Kasten muss ganz im Bild stehen – sonst fehlt die Überschrift oder der
+ * Knopf „Weiter“. Genau das ist passiert, solange mit einer angenommenen Höhe
+ * gerechnet wurde: In einem flachen Fenster rutschte er über den oberen Rand.
+ */
+describe('cardPlacement', () => {
+  const ziel = (over: Partial<Kasten> = {}): Kasten => ({
+    top: 300,
+    left: 400,
+    width: 200,
+    height: 40,
+    ...over,
+  })
+
+  /** Steht der Kasten vollständig im Fenster? */
+  const drin = (platz: { top: number; left: number; width: number }, hoehe: number, view: { width: number; height: number }) => {
+    const hoch = Math.min(hoehe, view.height - 2 * RAND)
+    return (
+      platz.top >= RAND - 0.01 &&
+      platz.top + hoch <= view.height - RAND + 0.01 &&
+      platz.left >= RAND - 0.01 &&
+      platz.left + platz.width <= view.width - RAND + 0.01
+    )
+  }
+
+  const fenster = [
+    { width: 1280, height: 900 },
+    { width: 1280, height: 260 },
+    { width: 1280, height: 200 },
+    { width: 390, height: 664 },
+    { width: 360, height: 420 },
+  ]
+
+  it('bleibt in jedem Fenster ganz sichtbar', () => {
+    for (const view of fenster) {
+      for (const narrow of [true, false]) {
+        for (const hoehe of [120, 200, 400, 2000]) {
+          for (const oben of [0, 20, view.height / 2, view.height - 60, view.height - 1]) {
+            const platz = cardPlacement({ box: ziel({ top: oben }), cardHeight: hoehe, view, narrow })
+            expect(
+              drin(platz, hoehe, view),
+              `${view.width}×${view.height} narrow=${narrow} Kasten ${hoehe} Ziel bei ${oben}: ${JSON.stringify(platz)}`,
+            ).toBe(true)
+          }
+        }
+      }
+    }
+  })
+
+  it('bleibt auch ohne Ziel im Bild', () => {
+    for (const view of fenster) {
+      const platz = cardPlacement({ box: null, cardHeight: 300, view, narrow: false })
+      expect(drin(platz, 300, view)).toBe(true)
+    }
+  })
+
+  it('stellt sich am Rechner unter das Ziel, wenn Platz ist', () => {
+    const view = { width: 1280, height: 900 }
+    const platz = cardPlacement({ box: ziel({ top: 200, height: 50 }), cardHeight: 190, view, narrow: false })
+    expect(platz.top).toBeGreaterThan(250)
+    // und waagerecht mittig unter dem Ziel
+    expect(platz.left + platz.width / 2).toBeCloseTo(500, 0)
+  })
+
+  it('weicht auf dem Telefon an den gegenüberliegenden Rand aus', () => {
+    const view = { width: 390, height: 664 }
+    const obenAmZiel = cardPlacement({ box: ziel({ top: 40 }), cardHeight: 190, view, narrow: true })
+    const untenAmZiel = cardPlacement({ box: ziel({ top: 500 }), cardHeight: 190, view, narrow: true })
+    expect(obenAmZiel.top).toBeGreaterThan(view.height / 2)
+    expect(untenAmZiel.top).toBe(RAND)
   })
 })

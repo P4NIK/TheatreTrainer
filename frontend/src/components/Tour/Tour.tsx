@@ -9,13 +9,20 @@
  * das PDF rendert nach, auf dem Telefon klappt die Tastatur auf. Statt an
  * jedes dieser Ereignisse zu denken, wird die Stelle viermal in der Sekunde
  * nachgemessen. Das kostet nichts und sitzt immer.
+ *
+ * Der Kasten misst dabei auch sich selbst. Mit einer angenommenen Höhe zu
+ * rechnen ging schief, sobald der Text länger oder das Fenster niedriger war
+ * als gedacht: Dann stand der Kasten halb über dem oberen Rand, und die
+ * Überschrift war weg. Gemessen und in den sichtbaren Bereich geschoben kann
+ * das nicht mehr passieren – und wenn selbst das nicht reicht, rollt der Text
+ * im Kasten, während die Knöpfe stehen bleiben.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useMediaQuery } from '@mantine/hooks'
 import { Badge, Button, Card, Group, Portal, Stack, Text } from '@mantine/core'
 
-import type { TabValue, TourStep } from '../../lib/tour'
+import { cardPlacement, RAND, type TabValue, type TourStep } from '../../lib/tour'
 
 interface Props {
   steps: TourStep[]
@@ -27,12 +34,11 @@ interface Props {
 
 /** Abstand zwischen Loch und Rahmen. */
 const PADDING = 6
-const CARD_WIDTH = 380
-const GAP = 14
 
 export default function Tour({ steps, onClose, onTab }: Props) {
   const [index, setIndex] = useState(0)
   const [box, setBox] = useState<DOMRect | null>(null)
+  const [hoehe, setHoehe] = useState(200)
   const schmal = useMediaQuery('(max-width: 62em)') ?? false
   const karte = useRef<HTMLDivElement>(null)
 
@@ -87,32 +93,33 @@ export default function Tour({ steps, onClose, onTab }: Props) {
     karte.current?.focus()
   }, [index])
 
+  /*
+   * Die eigene Höhe im Blick behalten.
+   *
+   * Sie hängt am Text des Schrittes, an der Fensterbreite und daran, ob ein
+   * „Zurück“ danebensteht – und sie wird gebraucht, um den Kasten ins Bild zu
+   * schieben. Ein Beobachter meldet jede Änderung, auch die durch eine spät
+   * geladene Schrift; die Schwelle hält winzige Ausschläge draußen.
+   */
+  useLayoutEffect(() => {
+    const el = karte.current
+    if (!el) return
+    const beobachter = new ResizeObserver(() => {
+      const gemessen = el.getBoundingClientRect().height
+      setHoehe((alt) => (Math.abs(alt - gemessen) > 2 ? gemessen : alt))
+    })
+    beobachter.observe(el)
+    return () => beobachter.disconnect()
+  }, [])
+
   if (!step) return null
 
-  /*
-   * Wo der Kasten steht.
-   *
-   * Auf dem Telefon immer am Rand – unten, oder oben, wenn das Ziel selbst
-   * unten liegt. Am Rechner neben dem Ziel: darunter, wenn Platz ist, sonst
-   * darüber, und waagerecht so weit geschoben, dass er im Bild bleibt.
-   */
-  const platz = (): React.CSSProperties => {
-    if (schmal || !box) {
-      const obenHin = box ? box.top + box.height / 2 > window.innerHeight / 2 : false
-      return obenHin
-        ? { top: 12, left: 12, right: 12 }
-        : { bottom: 12, left: 12, right: 12 }
-    }
-    const darunter = box.bottom + GAP
-    const passtDarunter = darunter + 220 < window.innerHeight
-    const links = Math.min(
-      Math.max(12, box.left + box.width / 2 - CARD_WIDTH / 2),
-      window.innerWidth - CARD_WIDTH - 12,
-    )
-    return passtDarunter
-      ? { top: darunter, left: links, width: CARD_WIDTH }
-      : { bottom: window.innerHeight - box.top + GAP, left: links, width: CARD_WIDTH }
-  }
+  const platz = cardPlacement({
+    box: box && { top: box.top, left: box.left, width: box.width, height: box.height },
+    cardHeight: hoehe,
+    view: { width: window.innerWidth, height: window.innerHeight },
+    narrow: schmal,
+  })
 
   return (
     <Portal>
@@ -150,9 +157,16 @@ export default function Tour({ steps, onClose, onTab }: Props) {
         withBorder
         shadow="lg"
         padding="md"
-        style={{ position: 'fixed', zIndex: 301, ...platz() }}
+        style={{
+          position: 'fixed',
+          zIndex: 301,
+          maxHeight: `calc(100vh - ${2 * RAND}px)`,
+          display: 'flex',
+          flexDirection: 'column',
+          ...platz,
+        }}
       >
-        <Stack gap="xs">
+        <Stack gap="xs" style={{ minHeight: 0 }}>
           <Group justify="space-between" wrap="nowrap">
             <Text fw={600}>{step.title}</Text>
             <Badge variant="light" color="gray" size="sm">
@@ -160,7 +174,8 @@ export default function Tour({ steps, onClose, onTab }: Props) {
             </Badge>
           </Group>
 
-          <Text size="sm" c="dimmed">
+          {/* Nur der Text rollt; „Weiter“ muss immer erreichbar bleiben. */}
+          <Text size="sm" c="dimmed" style={{ overflowY: 'auto', minHeight: 0 }}>
             {step.text}
           </Text>
 

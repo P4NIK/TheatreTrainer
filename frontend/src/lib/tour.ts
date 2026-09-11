@@ -145,6 +145,85 @@ export function stepsFor(id: TourId, touch: boolean): TourStep[] {
   return tour.steps.filter((step) => !step.only || (step.only === 'touch') === touch)
 }
 
+/* ------------------------------------------------------------- Platzierung */
+
+/** Luft zwischen Ziel und Kasten. */
+export const GAP = 14
+/** Und zum Fensterrand. */
+export const RAND = 12
+/** So breit wird der Kasten, wo Platz ist. */
+export const CARD_WIDTH = 380
+
+export interface Kasten {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+export interface Platz {
+  top: number
+  left: number
+  width: number
+}
+
+/**
+ * Wo der Kasten steht.
+ *
+ * Auf dem Telefon an dem Rand, der dem Ziel gegenüberliegt; am Rechner neben
+ * dem Ziel, bevorzugt darunter. Entscheidend sind aber die beiden letzten
+ * Zeilen: Was auch immer vorher gewünscht war, wird in den sichtbaren Bereich
+ * geschoben. Ohne das stand der Kasten in einem flachen Fenster halb über dem
+ * oberen Rand, und die Überschrift war nicht mehr zu lesen.
+ *
+ * Die Höhe kommt gemessen herein, nicht geschätzt: Sie hängt an der Länge des
+ * Textes und an der Breite des Fensters, und geraten war sie schon einmal
+ * falsch.
+ */
+export function cardPlacement(options: {
+  box: Kasten | null
+  cardHeight: number
+  view: { width: number; height: number }
+  narrow: boolean
+}): Platz {
+  const { box, cardHeight, view, narrow } = options
+  const hoch = Math.min(cardHeight, Math.max(0, view.height - 2 * RAND))
+  const breit = narrow
+    ? Math.max(0, view.width - 2 * RAND)
+    : Math.min(CARD_WIDTH, Math.max(0, view.width - 2 * RAND))
+
+  const einpassen = (wert: number, raum: number, laenge: number) =>
+    Math.min(Math.max(RAND, wert), Math.max(RAND, raum - laenge - RAND))
+
+  if (!box) {
+    return {
+      top: einpassen((view.height - hoch) / 2, view.height, hoch),
+      left: einpassen((view.width - breit) / 2, view.width, breit),
+      width: breit,
+    }
+  }
+
+  const platzOben = box.top - GAP - RAND
+  const platzUnten = view.height - (box.top + box.height) - GAP - RAND
+  const untenHin = narrow
+    ? box.top + box.height / 2 < view.height / 2
+    : platzUnten >= hoch || platzUnten >= platzOben
+
+  const gewuenscht = narrow
+    ? untenHin
+      ? view.height - hoch - RAND
+      : RAND
+    : untenHin
+      ? box.top + box.height + GAP
+      : box.top - GAP - hoch
+
+  return {
+    top: einpassen(gewuenscht, view.height, hoch),
+    left: narrow ? RAND : einpassen(box.left + box.width / 2 - breit / 2, view.width, breit),
+    width: breit,
+  }
+}
+
 /* ------------------------------------------------------------- Gedächtnis */
 
 const SEEN_KEY = 'theater-touren'
