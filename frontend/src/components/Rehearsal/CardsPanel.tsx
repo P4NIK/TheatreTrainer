@@ -277,7 +277,7 @@ export default function CardsPanel({
         </Text>
       </div>
 
-      <Card withBorder padding="md">
+      <Card withBorder padding="md" data-tour="stapel">
         <Stack gap="sm">
           <Group justify="space-between" align="flex-start">
             <Group gap="xs">
@@ -392,7 +392,7 @@ export default function CardsPanel({
 
           <Divider my="xs" label="Diese Sitzung" labelPosition="left" />
 
-          <Group align="flex-end" gap="sm" wrap="nowrap">
+          <Group align="flex-end" gap="sm" wrap="nowrap" data-tour="stichwort">
             <SegmentedControl
               value={filter}
               onChange={(v) => setFilter(v as DeckFilter)}
@@ -527,6 +527,7 @@ export default function CardsPanel({
 
           <Group>
             <Button
+              data-tour="sitzung-starten"
               leftSection={<IconPlayerPlay size={18} />}
               onClick={() => void start()}
               loading={starting}

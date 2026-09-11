@@ -98,18 +98,21 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
 
       <Card withBorder padding="md">
         <Stack gap="sm">
-          <SelectionCard
-            project={project}
-            blocks={blocks}
-            settings={selection}
-            onChange={setSelection}
-            selection={picked}
-            total={blocks.length}
-          />
+          <div data-tour="auswahl">
+            <SelectionCard
+              project={project}
+              blocks={blocks}
+              settings={selection}
+              onChange={setSelection}
+              selection={picked}
+              total={blocks.length}
+            />
+          </div>
 
           <Divider my="xs" />
 
           <Switch
+            data-tour="aussparen"
             checked={skipMyRole}
             onChange={(e) => setSkipMyRole(e.currentTarget.checked)}
             label={
@@ -172,6 +175,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
 
           <Group>
             <Button
+              data-tour="audio-erzeugen"
               leftSection={<IconPlayerPlay size={18} />}
               onClick={start}
               loading={running}

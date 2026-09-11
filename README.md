@@ -81,6 +81,36 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 ## Bedienung
 
+Beim ersten Besuch führt eine kurze Einführung durch das, was man nicht sehen
+kann: dass Blöcke gezogen werden, wo die eigene Rolle markiert wird und was
+Hörfassung von Lernmodus unterscheidet. Eine Tour je Ansicht, drei bis fünf
+Schritte – Stückeliste, Editor, Sprecher, Hörfassung, Lernmodus, Karteikarten –
+und jede startet, wenn diese Ansicht zum ersten Mal offen ist.
+
+Der erste Versuch ließ eine einzige Tour durch die Reiter wandern. Das ging
+schief: Wer im Lernmodus auf das Fragezeichen drückte, wurde zuerst zu den
+Sprechern geschickt, und in der Hörfassung erklärte die Tour das Ziehen von
+Rechtecken. Hilfe muss dort anfangen, wo man steht – also gehört jede Tour
+genau einem Reiter, und `tourForTab()` sagt, welche.
+
+Abbrechen geht immer; das Fragezeichen oben rechts startet die Einführung zur
+gerade offenen Ansicht erneut. Wer die App weitergibt, setzt sie in der
+Technik-Prüfung unter *Einführungen zurücksetzen* für den nächsten Menschen
+wieder auf Anfang. Gemerkt wird das pro Browser, wie alles hier.
+
+Ein Schritt taucht erst auf, wenn er steht. Zuerst wurde der Kasten sofort
+gezeichnet, dann rollte die Seite zum Ziel, und die nächste Messung schob ihn
+nach – zwei Sprünge für einen Schritt. Jetzt wird beim Schrittwechsel jedes
+Bild gemessen und erst nach drei gleichen Messungen eingeblendet; gerollt wird
+überhaupt nur, wenn das Ziel nicht ohnehin schon im Bild steht (`needsScroll`).
+Am Rechner bleibt die Seite damit bei 19 von 20 Schritten einfach stehen.
+
+Keine fremde Bibliothek dafür: intro.js steht seit Fassung 3 unter der AGPL und
+würde dieses Projekt mitziehen, und die schwierige Hälfte – ein Kasten, der
+neben einem Element steht – liegt in Mantine schon bereit. Die Schritte stehen
+als Text in `src/lib/tour.ts`, angeheftet an `data-tour`-Attribute; das Loch im
+abgedunkelten Bild ist ein Kästchen mit sehr großem Schatten.
+
 1. **Projekt anlegen** – Name eingeben, PDF hochladen.
 2. **Editor** – mit der Maus ein Rechteck um eine Textzeile ziehen. Der Text
    erscheint im Dialog, Sprecher und Typ prüfen, „Hinzufügen“.
@@ -543,7 +573,7 @@ frontend/
   public/wasm/        # espeak-ng, onnxruntime – von npm run wasm gefüllt
   public/sw.js        # Service Worker: nach dem ersten Besuch offline
   src/components/     # PdfCanvasEditor, BlockList, SpeakerConfig,
-                      # AutoDetect, SynthesizePanel, Rehearsal
+                      # AutoDetect, SynthesizePanel, Rehearsal, Tour
   src/lib/            # Textextraktion, Blockerkennung, Auswahl, Probenablauf,
                       # Karteikarten (Leitner + Sitzungsqueue),
                       # Wortvergleich (Levenshtein + Kölner Phonetik),

@@ -26,6 +26,16 @@ import {
 } from '@tabler/icons-react'
 
 import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
+import Tour from '../components/Tour/Tour'
+import {
+  hasSeen,
+  markSeen,
+  onAskForTour,
+  stepsFor,
+  tourForTab,
+  type TabValue,
+  type TourId,
+} from '../lib/tour'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
 import PdfCanvasEditor from '../components/PdfCanvasEditor/PdfCanvasEditor'
@@ -278,6 +288,33 @@ export default function EditorPage({ projectId, onBack }: Props) {
    * Adds automatically detected blocks. The combined list is put back into
    * reading order – page, then position on the page – and renumbered.
    */
+  /*
+   * Jeder Reiter hat seine eigene Einführung, und sie gehört dem Reiter, der
+   * gerade offen ist: Wer im Lernmodus auf das Fragezeichen drückt, will
+   * etwas über den Lernmodus wissen und nicht zuerst zu den Sprechern
+   * geschickt werden.
+   */
+  const [tab, setTab] = useState<string | null>('editor')
+  const [tour, setTour] = useState<TourId | null>(() => (hasSeen('editor') ? null : 'editor'))
+
+  // Das Fragezeichen im Kopf fragt, welche Einführung hierher passt.
+  useEffect(
+    () => onAskForTour(() => setTour(tourForTab(tab as TabValue))),
+    [tab],
+  )
+
+  /** Jeder Reiter erklärt sich beim ersten Öffnen von selbst. */
+  const reiterWechsel = (wohin: string | null) => {
+    setTab(wohin)
+    const naechste = tourForTab(wohin as TabValue)
+    if (!hasSeen(naechste)) setTour(naechste)
+  }
+
+  const tourZu = () => {
+    if (tour) markSeen(tour)
+    setTour(null)
+  }
+
   const addDetected = (detected: Block[]) => {
     const merged = [...blocks, ...detected].sort(
       (a, b) => a.page - b.page || a.rect.y - b.rect.y || a.rect.x - b.rect.x,
@@ -340,7 +377,13 @@ export default function EditorPage({ projectId, onBack }: Props) {
               {/* Auf dem Telefon nur die Symbole – die Namen stehen im Tooltip
                   und die Fläche gewinnt eine halbe Zeile. */}
               <Tooltip label="Automatisch erkennen">
-                <ActionIcon variant="light" size="lg" onClick={() => setDetectOpen(true)} aria-label="Automatisch erkennen">
+                <ActionIcon
+                  data-tour="erkennen"
+                  variant="light"
+                  size="lg"
+                  onClick={() => setDetectOpen(true)}
+                  aria-label="Automatisch erkennen"
+                >
                   <IconWand size={18} />
                 </ActionIcon>
               </Tooltip>
@@ -360,6 +403,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
           ) : (
             <>
               <Button
+                data-tour="erkennen"
                 size="xs"
                 variant="light"
                 leftSection={<IconWand size={16} />}
@@ -382,8 +426,8 @@ export default function EditorPage({ projectId, onBack }: Props) {
         </Group>
       </Group>
 
-      <Tabs defaultValue="editor" keepMounted={false}>
-        <Tabs.List mb="md" grow={schmal}>
+      <Tabs value={tab} onChange={reiterWechsel} keepMounted={false}>
+        <Tabs.List mb="md" grow={schmal} data-tour="reiter">
           <Tabs.Tab
             value="editor"
             leftSection={<IconSquareRoundedLetterA size={18} />}
@@ -441,7 +485,10 @@ export default function EditorPage({ projectId, onBack }: Props) {
               height: schmal ? undefined : 'calc(100vh - 210px)',
             }}
           >
-            <div style={{ height: schmal ? '65vh' : '100%', minHeight: 0, minWidth: 0 }}>
+            <div
+              data-tour="pdf"
+              style={{ height: schmal ? '65vh' : '100%', minHeight: 0, minWidth: 0 }}
+            >
             <PdfCanvasEditor
               fileUrl={pdfUrl}
               blocks={blocks}
@@ -454,6 +501,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
               onRectDrawn={onRectDrawn}
             />
             </div>
+            <div data-tour="blockliste" style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <BlockList
               projectId={projectId}
               blocks={blocks}
@@ -467,6 +515,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
               onDelete={deleteBlock}
               onReorder={mutateBlocks}
             />
+            </div>
           </div>
         </Tabs.Panel>
 
@@ -511,6 +560,10 @@ export default function EditorPage({ projectId, onBack }: Props) {
           />
         </Tabs.Panel>
       </Tabs>
+
+      {/* key: eine neue Tour fängt beim ersten Schritt an, nicht dort, wo die
+          vorige aufgehört hat. */}
+      {tour && <Tour key={tour} steps={stepsFor(tour, schmal)} onClose={tourZu} />}
 
       <AutoDetectModal
         opened={detectOpen}

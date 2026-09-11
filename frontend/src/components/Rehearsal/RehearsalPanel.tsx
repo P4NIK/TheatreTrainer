@@ -363,14 +363,16 @@ export default function RehearsalPanel({
 
           <Divider my="xs" label="Welcher Teil" labelPosition="left" />
 
-          <SelectionCard
-            project={asRole}
-            blocks={blocks}
-            settings={selection}
-            onChange={setSelection}
-            selection={picked}
-            total={blocks.length}
-          />
+          <div data-tour="ausschnitt">
+            <SelectionCard
+              project={asRole}
+              blocks={blocks}
+              settings={selection}
+              onChange={setSelection}
+              selection={picked}
+              total={blocks.length}
+            />
+          </div>
 
           <Switch
             checked={includeDirections}
@@ -431,6 +433,7 @@ export default function RehearsalPanel({
             description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst."
           />
           <Switch
+            data-tour="auswerten"
             checked={options.analyze}
             onChange={(e) => {
               const an = e.currentTarget.checked
@@ -520,6 +523,7 @@ export default function RehearsalPanel({
 
           <Group>
             <Button
+              data-tour="probe-starten"
               leftSection={<IconPlayerPlay size={18} />}
               onClick={() => void start(startInfo.index)}
               loading={starting}

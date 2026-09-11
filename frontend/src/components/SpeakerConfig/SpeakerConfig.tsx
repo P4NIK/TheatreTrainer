@@ -206,7 +206,7 @@ export default function SpeakerConfig({
     }
   }
 
-  const renderCard = (key: string, label: string, isDirection: boolean) => {
+  const renderCard = (key: string, label: string, isDirection: boolean, erste = false) => {
     const cfg = configOf(key, isDirection)
 
     return (
@@ -230,6 +230,7 @@ export default function SpeakerConfig({
               {!isDirection && (
                 <Tooltip label="Das ist meine Rolle">
                   <Radio
+                    data-tour={erste ? 'meine-rolle' : undefined}
                     checked={myRole === key}
                     onChange={() => onMyRoleChange(myRole === key ? '' : key)}
                     onClick={() => myRole === key && onMyRoleChange('')}
@@ -238,6 +239,7 @@ export default function SpeakerConfig({
                 </Tooltip>
               )}
               <ActionIcon
+                data-tour={erste ? 'hoerprobe' : undefined}
                 variant="light"
                 size="lg"
                 onClick={() => preview(key)}
@@ -252,6 +254,8 @@ export default function SpeakerConfig({
 
           {voiceField(key, cfg, 'sm')}
 
+          {/* Die Einführung zeigt auf die Regler der ersten Rolle. */}
+          <div data-tour={erste ? 'stimm-regler' : undefined}>
           {(
             [
               ['Tempo', 'lengthScale', 0.6, 1.8, 0.05, (v: number) => `${v.toFixed(2)}× langsamer`],
@@ -281,6 +285,7 @@ export default function SpeakerConfig({
               />
             </div>
           ))}
+          </div>
 
           <ColorInput
             size="xs"
@@ -295,7 +300,7 @@ export default function SpeakerConfig({
     )
   }
 
-  const renderRow = (key: string, label: string, isDirection: boolean) => {
+  const renderRow = (key: string, label: string, isDirection: boolean, erste = false) => {
     const cfg = configOf(key, isDirection)
 
     return (
@@ -318,7 +323,7 @@ export default function SpeakerConfig({
 
         <Table.Td>{voiceField(key, cfg, 'xs', 230)}</Table.Td>
 
-        <Table.Td w={150}>
+        <Table.Td w={150} data-tour={erste ? 'stimm-regler' : undefined}>
           <Slider
             size="sm"
             min={0.6}
@@ -373,6 +378,7 @@ export default function SpeakerConfig({
             </Text>
           ) : (
             <Radio
+              data-tour={erste ? 'meine-rolle' : undefined}
               checked={myRole === key}
               onChange={() => onMyRoleChange(myRole === key ? '' : key)}
               onClick={() => myRole === key && onMyRoleChange('')}
@@ -384,6 +390,7 @@ export default function SpeakerConfig({
         <Table.Td>
           <Tooltip label="Hörprobe abspielen">
             <ActionIcon
+              data-tour={erste ? 'hoerprobe' : undefined}
               variant="light"
               onClick={() => preview(key)}
               loading={previewing === key}
@@ -428,7 +435,7 @@ export default function SpeakerConfig({
 
       {schmal ? (
         <Stack gap="sm">
-          {rows.map((name) => renderCard(name, name, false))}
+          {rows.map((name, i) => renderCard(name, name, false, i === 0))}
           {renderCard(DIRECTION_KEY, 'Regieanweisungen', true)}
         </Stack>
       ) : (
@@ -447,7 +454,7 @@ export default function SpeakerConfig({
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {rows.map((name) => renderRow(name, name, false))}
+            {rows.map((name, i) => renderRow(name, name, false, i === 0))}
             {renderRow(DIRECTION_KEY, 'Regieanweisungen', true)}
           </Table.Tbody>
         </Table>
