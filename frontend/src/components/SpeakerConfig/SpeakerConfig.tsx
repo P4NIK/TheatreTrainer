@@ -22,7 +22,7 @@ import { IconDownload, IconPlayerPlay } from '@tabler/icons-react'
 import { encodeWav } from '../../lib/audio'
 import { speakerNames } from '../../lib/blocks'
 import { engineFor } from '../../lib/engine'
-import { VOICES, voiceReady } from '../../lib/voices'
+import { DEFAULT_VOICE, VOICES, voiceReady } from '../../lib/voices'
 import { DIRECTION_KEY, type Block, type Speakers } from '../../types'
 
 interface Props {
@@ -93,7 +93,7 @@ export default function SpeakerConfig({
   /** Was für eine Rolle eingestellt ist – oder was sie mitbekommt, wenn nichts. */
   const configOf = (key: string, isDirection: boolean): Speakers[string] =>
     speakers[key] ?? {
-      model: '',
+      model: DEFAULT_VOICE,
       speakerId: 0,
       lengthScale: isDirection ? 1.15 : 1,
       volume: isDirection ? 0.7 : 1,
@@ -101,9 +101,49 @@ export default function SpeakerConfig({
       color: isDirection ? '#868e96' : '#4A90D9',
     }
 
+  /**
+   * Die Stimme einer Rolle.
+   *
+   * Solange es nur eine gibt, ist eine Auswahlliste ein Feld ohne Wahl: Sie
+   * steht in jeder Rolle schon drin, und das Einzige, was sich damit anstellen
+   * ließe, wäre sie zu leeren. Gezeigt wird sie deshalb erst, wenn es etwas zu
+   * wählen gibt – oder wenn eine Rolle auf eine Stimme zeigt, die es nicht
+   * mehr gibt; dann ist die Liste der Weg zurück.
+   */
+  const voiceField = (key: string, cfg: Speakers[string], size: 'xs' | 'sm', width?: number) => {
+    const known = VOICES.some((voice) => voice.name === cfg.model)
+    if (known && VOICES.length === 1) {
+      return (
+        <Text size="xs" c="dimmed">
+          Stimme: {VOICES[0].label}
+        </Text>
+      )
+    }
+    return (
+      <Stack gap={2}>
+        <Select
+          size={size}
+          placeholder="Stimme wählen"
+          data={voiceOptions}
+          value={known ? cfg.model : null}
+          onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
+          clearable
+          w={width}
+        />
+        {/* Older projects may still point at a voice from the days of the
+            voices/ folder. Saying so is friendlier than an empty field. */}
+        {cfg.model !== '' && !known && (
+          <Text size="xs" c="red">
+            „{cfg.model}“ gibt es nicht mehr – bitte neu wählen.
+          </Text>
+        )}
+      </Stack>
+    )
+  }
+
   const update = (key: string, patch: Partial<Speakers[string]>) => {
     const current = speakers[key] ?? {
-      model: '',
+      model: DEFAULT_VOICE,
       speakerId: 0,
       lengthScale: 1,
       volume: 1,
@@ -168,7 +208,6 @@ export default function SpeakerConfig({
 
   const renderCard = (key: string, label: string, isDirection: boolean) => {
     const cfg = configOf(key, isDirection)
-    const known = VOICES.some((voice) => voice.name === cfg.model)
 
     return (
       <Card key={key} withBorder padding="sm">
@@ -211,19 +250,7 @@ export default function SpeakerConfig({
             </Group>
           </Group>
 
-          <Select
-            size="sm"
-            placeholder="Stimme wählen"
-            data={voiceOptions}
-            value={known ? cfg.model : null}
-            onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
-            clearable
-          />
-          {cfg.model !== '' && !known && (
-            <Text size="xs" c="red">
-              „{cfg.model}“ gibt es nicht mehr – bitte neu wählen.
-            </Text>
-          )}
+          {voiceField(key, cfg, 'sm')}
 
           {(
             [
@@ -270,7 +297,6 @@ export default function SpeakerConfig({
 
   const renderRow = (key: string, label: string, isDirection: boolean) => {
     const cfg = configOf(key, isDirection)
-    const known = VOICES.some((voice) => voice.name === cfg.model)
 
     return (
       <Table.Tr key={key}>
@@ -290,26 +316,7 @@ export default function SpeakerConfig({
           </Group>
         </Table.Td>
 
-        <Table.Td>
-          <Stack gap={2}>
-            <Select
-              size="xs"
-              placeholder="Stimme wählen"
-              data={voiceOptions}
-              value={known ? cfg.model : null}
-              onChange={(v) => update(key, { model: v ?? '', speakerId: 0 })}
-              clearable
-              w={230}
-            />
-            {/* Older projects may still point at a voice from the days of the
-                voices/ folder. Saying so is friendlier than an empty field. */}
-            {cfg.model !== '' && !known && (
-              <Text size="xs" c="red">
-                „{cfg.model}“ gibt es nicht mehr – bitte neu wählen.
-              </Text>
-            )}
-          </Stack>
-        </Table.Td>
+        <Table.Td>{voiceField(key, cfg, 'xs', 230)}</Table.Td>
 
         <Table.Td w={150}>
           <Slider

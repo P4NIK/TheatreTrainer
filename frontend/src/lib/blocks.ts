@@ -1,4 +1,5 @@
 import { DIRECTION_KEY, type Block, type SpeakerConfig, type Speakers } from '../types'
+import { DEFAULT_VOICE } from './voices'
 
 /** Palette used when a new speaker shows up in the editor. */
 const PALETTE = [
@@ -39,7 +40,7 @@ const PITCHES = [1.0, 0.88, 1.12, 0.94, 1.2, 0.82, 1.06, 0.98]
 
 export function defaultSpeakerConfig(index: number): SpeakerConfig {
   return {
-    model: '',
+    model: DEFAULT_VOICE,
     speakerId: 0,
     lengthScale: 1,
     volume: 1,
@@ -57,7 +58,9 @@ export function syncSpeakers(blocks: Block[], speakers: Speakers): Speakers {
   let changed = false
 
   if (!next[DIRECTION_KEY]) {
-    next[DIRECTION_KEY] = { model: '', speakerId: 0, lengthScale: 1.15, volume: 0.7, pitch: 1, color: '#868e96' }
+    next[DIRECTION_KEY] = {
+      model: DEFAULT_VOICE, speakerId: 0, lengthScale: 1.15, volume: 0.7, pitch: 1, color: '#868e96',
+    }
     changed = true
   }
   const names = speakerNames(blocks)
@@ -67,6 +70,22 @@ export function syncSpeakers(blocks: Block[], speakers: Speakers): Speakers {
       changed = true
     }
   })
+
+  /*
+   * Und Rollen ohne Stimme bekommen die eine, die es gibt.
+   *
+   * Das betrifft ältere Projekte und alles, was von außen hereinkommt: Der
+   * Server verlangte früher eine ausdrückliche Wahl, und ein Export kann eine
+   * leere Angabe enthalten. Eine Stimme, die es nicht mehr gibt, wird
+   * dagegen stehen gelassen – die soll in der Verwaltung auffallen und nicht
+   * stillschweigend ersetzt werden.
+   */
+  for (const [name, config] of Object.entries(next)) {
+    if (config.model === '' && DEFAULT_VOICE !== '') {
+      next[name] = { ...config, model: DEFAULT_VOICE }
+      changed = true
+    }
+  }
   return changed ? next : speakers
 }
 

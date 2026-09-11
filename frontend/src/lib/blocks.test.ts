@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasParentheticals, renumber, splitBlockAtParens, splitParens } from './blocks'
-import type { Block } from '../types'
+import {
+  hasParentheticals,
+  renumber,
+  splitBlockAtParens,
+  splitParens,
+  syncSpeakers,
+} from './blocks'
+import { DEFAULT_VOICE, VOICES } from './voices'
+import { DIRECTION_KEY, type Block, type Speakers } from '../types'
 
 const block = (text: string, over: Partial<Block> = {}): Block => ({
   id: 'b1',
@@ -81,5 +88,46 @@ describe('splitParens', () => {
   it('behält den Text vollständig', () => {
     const text = 'Ja. (nickt) Sicher.'
     expect(splitParens(text).map((p) => p.text).join('')).toBe(text)
+  })
+})
+
+describe('syncSpeakers', () => {
+  const blocks = [
+    block('Guten Abend.', { id: 'a', speaker: 'Gisela' }),
+    block('Auch Ihnen.', { id: 'b', speaker: 'Wilhelm' }),
+  ]
+
+  it('legt jede neue Rolle mit der vorhandenen Stimme an', () => {
+    const speakers = syncSpeakers(blocks, {})
+    expect(Object.keys(speakers).sort()).toEqual(['Gisela', 'Wilhelm', DIRECTION_KEY])
+    for (const config of Object.values(speakers)) {
+      expect(config.model).toBe(DEFAULT_VOICE)
+      expect(VOICES.some((v) => v.name === config.model)).toBe(true)
+    }
+  })
+
+  /*
+   * Ältere Projekte und alles, was von außen hereinkommt, führen Rollen ohne
+   * Stimme: Früher musste eine ausgewählt werden, heute gibt es nur eine.
+   */
+  it('trägt die Stimme in Rollen nach, die keine haben', () => {
+    const leer: Speakers = {
+      Gisela: { model: '', speakerId: 0, lengthScale: 1, volume: 1, pitch: 1, color: '#000' },
+    }
+    const speakers = syncSpeakers(blocks, leer)
+    expect(speakers.Gisela.model).toBe(DEFAULT_VOICE)
+    expect(speakers.Gisela.color).toBe('#000')
+  })
+
+  it('lässt eine Stimme stehen, die es nicht mehr gibt', () => {
+    const alt: Speakers = {
+      Gisela: { model: 'de_DE-eva_k-x_low', speakerId: 0, lengthScale: 1, volume: 1, pitch: 1, color: '#000' },
+    }
+    expect(syncSpeakers(blocks, alt).Gisela.model).toBe('de_DE-eva_k-x_low')
+  })
+
+  it('gibt dieselbe Tabelle zurück, wenn nichts zu tun ist', () => {
+    const einmal = syncSpeakers(blocks, {})
+    expect(syncSpeakers(blocks, einmal)).toBe(einmal)
   })
 })

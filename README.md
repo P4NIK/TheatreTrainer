@@ -89,9 +89,12 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
    Gespeichert wird automatisch (ca. 1 s nach der letzten Änderung).
 3. **Automatisch erkennen** – wenn ein paar Blöcke stehen, füllt der Knopf
    oben rechts den Rest des Stücks (siehe unten).
-4. **Sprecher** – jeder Rolle eine Stimme zuweisen, Tonhöhe, Tempo und
-   Lautstärke einstellen, mit dem Play-Knopf eine Hörprobe abspielen und die
-   eigene Rolle markieren.
+4. **Sprecher** – Tonhöhe, Tempo und Lautstärke je Rolle einstellen, mit dem
+   Play-Knopf eine Hörprobe abspielen und die eigene Rolle markieren. Die
+   Stimme steht schon da: Es gibt genau eine, und jede neue Rolle bekommt sie
+   beim Anlegen. Eine Auswahlliste erscheint erst, wenn es mehr als eine gibt
+   – oder wenn ein altes Projekt auf eine Stimme zeigt, die es nicht mehr
+   gibt.
 5. **Hörfassung** – oben auswählen, welcher Teil des Stücks erzeugt werden soll
    (siehe unten), darunter die Schalter für „eigene Rolle aussparen“ und
    „Regieanweisungen mitlesen“ setzen, „Audio erzeugen“ drücken, danach direkt
@@ -101,18 +104,10 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 ### Blöcke automatisch erkennen
 
-Theaterstücke werden auf zwei Arten gesetzt, und die App erkennt beide. Welche
-vorliegt, entscheidet sie selbst und schreibt es oben in den Dialog.
-
-**Muster 1: Spalten.** Sprechername und Regieanweisungen stehen am linken Rand,
-der Sprechtext eingerückt daneben. Wo genau diese beiden Spalten liegen, macht
-jeder Verlag anders – deshalb ist nichts fest verdrahtet, sondern die App liest
-es aus deinen eigenen Blöcken ab.
-
-> ```
-> HUGO        Guten Abend. Ich hatte nicht erwartet,
->             dass Sie noch kommen würden.
-> ```
+Ein Theaterstück ist in Spalten gesetzt: Sprechername und Regieanweisungen am
+linken Rand, der Sprechtext eingerückt. Wo genau diese beiden Spalten liegen,
+macht jeder Verlag anders – deshalb ist nichts fest verdrahtet, sondern die App
+liest es aus deinen eigenen Blöcken ab.
 
 **Vorgehen:** zwei, drei Blöcke von Hand ziehen – eine Sprechzeile und eine
 Regieanweisung genügen –, dann oben rechts auf „Automatisch erkennen“. Der
@@ -123,54 +118,20 @@ eine Vorschau, bevor etwas übernommen wird.
 Ohne gezeichnete Blöcke rät die App die Spalten aus dem Seitenaufbau. Das
 funktioniert oft, aber das Lernen ist deutlich zuverlässiger.
 
-**Muster 2: fett und kursiv.** Hier gibt es keine Spalten – alles beginnt am
-linken Rand, und die Gliederung steckt allein in der Schrift: der Sprechername
-**fett mit Doppelpunkt**, die Regieanweisung *kursiv*, mitten im Sprechtext in
-Klammern oder als eigener Absatz.
-
-> **Gisela:** *(blickt mit finsterem Blick von ihrem Ordner auf)* Welche
-> Nummer? *(sieht dann wieder in ihren Ordner)*
-
-Ein Block ist hier nicht eine Zeile in einer Spalte, sondern ein Absatz, und
-der zerfällt in so viele Blöcke, wie die Schrift darin wechselt – aus dem
-Beispiel oben werden drei: Regie, Sprechtext, Regie. Für dieses Muster braucht
-es keine gezeichneten Blöcke; es erkennt sich an den fetten Namen selbst.
-
-Den Schriftschnitt verrät pdf.js nicht von sich aus: `getTextContent()` nennt
-nur `g_d0_f4` und „serif“. Den wirklichen Namen der Schrift –
-`TimesNewRomanPS-BoldMT` – gibt es erst, wenn die Seite auch gezeichnet werden
-könnte. Deshalb wird `getOperatorList()` genau einmal je unbekannter Schrift
-aufgerufen: Nach der ersten Textseite kennt die App alle und liest den Rest des
-Stücks ohne diesen Umweg.
-
 Was dabei automatisch passiert:
 
 - Sprechername und Sprechtext werden getrennt, mehrzeilige Repliken
   zusammengefasst.
 - Eine Replik, die auf der nächsten Seite weiterläuft, behält ihren Sprecher.
 - Seitenzahlen und zentrierte Überschriften („Erster Akt“) werden ignoriert.
-- Laufende Kopf- und Fußzeilen fliegen raus: eine Zeile gilt als solche, wenn
-  sie am Seitenrand steht, auf mindestens drei Seiten und 60 % aller Seiten
-  vorkommt *und* dabei immer auf derselben Höhe. Die letzte Bedingung ist
-  wichtiger, als sie klingt – ohne sie hielt die App einen Sprechernamen, der
-  zweimal ans Seitenende rutschte, für eine Fußzeile und ließ ihn weg.
 - Seiten ohne Dialog – Titelei, Rechtehinweise, Personenverzeichnis – werden
-  übersprungen (abschaltbar). Beim Schriftschnitt-Muster gehört alles vor dem
-  ersten „1. Akt“ dazu: Dort steht „Bühnenbild:“ fett mit Doppelpunkt und sähe
-  sonst wie eine Rolle aus.
+  übersprungen (abschaltbar).
 - Eingeklammerte Einschübe wie „(kostet)“ fliegen aus dem Sprechtext. Zur
   Auswahl stehen außerdem „als eigene Blöcke“ – dann liest sie die
   Regie-Stimme – und „im Text lassen“ (siehe unten).
 - Bereiche, auf denen schon ein Block liegt, bleiben unangetastet. Ein zweiter
   Durchlauf ändert also nichts, und ein halb bearbeitetes Stück lässt sich
   auffüllen.
-
-**Abgleich mit der Rollenliste.** Viele Textbücher nennen vorn jede Rolle mit
-der Zahl ihrer Einsätze: „Wilhelm Holme (138)“. Wo es die gibt, stellt der
-Dialog sie neben die erkannten Einsätze. Das ist ein Hinweis und keine Vorgabe
-– wer sein Textbuch gekürzt hat, hat weniger, und die Erkennung ist deshalb
-nicht schlechter. Als Fehlerzeiger taugt der Vergleich trotzdem: Wer um eins
-danebenliegt, hat vermutlich einen Einsatz übersehen.
 
 Anschließend wird die Vorlese-Reihenfolge nach Seite und Position neu vergeben.
 Bei mehrspaltigem Satz kann das falsch sein – dann in der Blockliste per
@@ -609,8 +570,9 @@ dem eigenen Speicher.
 
 **„… gibt es nicht mehr – bitte neu wählen“** im Sprecher-Tab – das Stück steht
 noch auf einer Stimme aus der Zeit, als die Modelle von Hand installiert
-wurden. Einfach *Thorsten* wählen; mehrere Rollen unterscheidest du über
-Tonhöhe und Tempo.
+wurden. Nur in diesem Fall erscheint die Auswahlliste: *Thorsten* wählen, und
+sie verschwindet wieder. Mehrere Rollen unterscheidest du über Tonhöhe und
+Tempo, nicht über die Stimme.
 
 **Auf dem iPhone bricht die Seite mitten im Erzeugen ab** – das war die
 Hörfassung im Arbeitsspeicher; seit sie laufend auf die Platte geschrieben wird

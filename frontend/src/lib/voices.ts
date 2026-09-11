@@ -52,6 +52,17 @@ export const VOICES: VoiceInfo[] = [
   },
 ]
 
+/**
+ * Die Stimme, die eine Rolle bekommt, solange niemand etwas anderes sagt.
+ *
+ * Es gibt genau eine, und „keine“ ist kein sinnvoller Ausgangszustand: Eine
+ * Rolle ohne Stimme lässt den Durchlauf mit „ohne Stimme“ stehenbleiben, und
+ * zu wählen gibt es dabei nichts. Kommt eine zweite Stimme dazu, bleibt dies
+ * die Vorgabe – nur erscheint dann in der Sprecher-Verwaltung auch wieder
+ * eine Auswahlliste.
+ */
+export const DEFAULT_VOICE = VOICES[0]?.name ?? ''
+
 export function voiceByName(name: string): VoiceInfo | undefined {
   return VOICES.find((voice) => voice.name === name)
 }

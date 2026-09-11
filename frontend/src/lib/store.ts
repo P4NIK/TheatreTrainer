@@ -29,6 +29,7 @@ import {
 } from './storage'
 import type { Block, Card, Deck, Progress, ProgressInput, Project, Speakers } from '../types'
 import { DIRECTION_KEY } from '../types'
+import { DEFAULT_VOICE } from './voices'
 
 const FILES = {
   project: 'project.json',
@@ -60,7 +61,7 @@ const decoder = new TextDecoder()
 function defaultSpeakers(): Speakers {
   return {
     [DIRECTION_KEY]: {
-      model: '',
+      model: DEFAULT_VOICE,
       speakerId: 0,
       lengthScale: 1.15,
       volume: 0.7,
