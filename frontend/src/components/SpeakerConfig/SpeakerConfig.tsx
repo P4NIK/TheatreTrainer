@@ -239,6 +239,7 @@ export default function SpeakerConfig({
                 </Tooltip>
               )}
               <ActionIcon
+                data-tour={erste ? 'hoerprobe' : undefined}
                 variant="light"
                 size="lg"
                 onClick={() => preview(key)}
@@ -389,6 +390,7 @@ export default function SpeakerConfig({
         <Table.Td>
           <Tooltip label="Hörprobe abspielen">
             <ActionIcon
+              data-tour={erste ? 'hoerprobe' : undefined}
               variant="light"
               onClick={() => preview(key)}
               loading={previewing === key}

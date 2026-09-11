@@ -5,10 +5,10 @@
  * Einführung nicht. Das Loch entsteht ohne Maske: ein Kästchen über dem Ziel,
  * dessen Schatten den ganzen Bildschirm füllt.
  *
- * Das Ziel bewegt sich, während die Tour läuft: Ein Reiter wird umgeschaltet,
- * das PDF rendert nach, auf dem Telefon klappt die Tastatur auf. Statt an
- * jedes dieser Ereignisse zu denken, wird die Stelle viermal in der Sekunde
- * nachgemessen. Das kostet nichts und sitzt immer.
+ * Das Ziel bewegt sich, während die Tour läuft: Das PDF rendert nach, eine
+ * Liste lädt, auf dem Telefon klappt die Tastatur auf. Statt an jedes dieser
+ * Ereignisse zu denken, wird die Stelle viermal in der Sekunde nachgemessen.
+ * Das kostet nichts und sitzt immer.
  *
  * Der Kasten misst dabei auch sich selbst. Mit einer angenommenen Höhe zu
  * rechnen ging schief, sobald der Text länger oder das Fenster niedriger war
@@ -22,20 +22,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useMediaQuery } from '@mantine/hooks'
 import { Badge, Button, Card, Group, Portal, Stack, Text } from '@mantine/core'
 
-import { cardPlacement, RAND, type TabValue, type TourStep } from '../../lib/tour'
+import { cardPlacement, RAND, type TourStep } from '../../lib/tour'
 
 interface Props {
   steps: TourStep[]
   /** Wird beim Schließen gerufen – auch beim Überspringen. */
   onClose: () => void
-  /** Schaltet den Reiter um, den ein Schritt braucht. */
-  onTab?: (tab: TabValue) => void
 }
 
 /** Abstand zwischen Loch und Rahmen. */
 const PADDING = 6
 
-export default function Tour({ steps, onClose, onTab }: Props) {
+export default function Tour({ steps, onClose }: Props) {
   const [index, setIndex] = useState(0)
   const [box, setBox] = useState<DOMRect | null>(null)
   const [hoehe, setHoehe] = useState(200)
@@ -51,13 +49,6 @@ export default function Tour({ steps, onClose, onTab }: Props) {
   }, [letzter, onClose])
 
   const zurueck = useCallback(() => setIndex((i) => Math.max(0, i - 1)), [])
-
-  // Der Reiter zuerst: sonst wird ein Ziel gemessen, das noch gar nicht steht.
-  useEffect(() => {
-    if (step?.tab) onTab?.(step.tab)
-    // onTab ist bei jedem Bild ein neues Stück Funktion; hier zählt der Schritt.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, step?.tab])
 
   useEffect(() => {
     if (!step) return

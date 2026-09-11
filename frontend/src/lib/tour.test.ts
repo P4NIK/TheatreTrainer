@@ -9,6 +9,7 @@ import {
   seenTours,
   stepsFor,
   TOURS,
+  tourForTab,
   type Kasten,
 } from './tour'
 
@@ -51,8 +52,21 @@ describe('die Touren selbst', () => {
     expect(finger.length).toBe(maus.length)
   })
 
-  it('sagt für jeden Schritt der Probe, welcher Reiter dazugehört', () => {
-    for (const step of stepsFor('proben', false)) expect(step.tab).toBeTruthy()
+  /*
+   * Der Grund für die Aufteilung: Wer im Lernmodus auf das Fragezeichen
+   * drückt, soll etwas über den Lernmodus hören – und nicht zuerst zu den
+   * Sprechern geschickt werden. Also hat jeder Reiter genau eine Tour.
+   */
+  it('gibt jedem Reiter seine eigene Einführung', () => {
+    expect(tourForTab('editor')).toBe('editor')
+    expect(tourForTab('speakers')).toBe('sprecher')
+    expect(tourForTab('audio')).toBe('hoerfassung')
+    expect(tourForTab('rehearsal')).toBe('probe')
+    expect(tourForTab('cards')).toBe('karten')
+    // Und keine dieser Touren ist leer.
+    for (const tab of ['editor', 'speakers', 'audio', 'rehearsal', 'cards'] as const) {
+      expect(stepsFor(tourForTab(tab), false).length).toBeGreaterThan(0)
+    }
   })
 
   it('kennt keine Tour ohne Namen', () => {
@@ -95,7 +109,7 @@ describe('was schon gesehen wurde', () => {
       },
     })
     expect(seenTours()).toEqual([])
-    expect(() => markSeen('proben')).not.toThrow()
+    expect(() => markSeen('probe')).not.toThrow()
   })
 })
 

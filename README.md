@@ -83,10 +83,15 @@ Synthese läuft absichtlich einthreadig, weil ein zweiter Thread nichts bringt.
 
 Beim ersten Besuch führt eine kurze Einführung durch das, was man nicht sehen
 kann: dass Blöcke gezogen werden, wo die eigene Rolle markiert wird und was
-Hörfassung von Lernmodus unterscheidet. Drei Touren, je drei bis fünf Schritte,
-jeweils dort, wo man gerade steht – Stückeliste, Editor, Proben. Die dritte
-startet, wenn der Lernmodus zum ersten Mal geöffnet wird, und blättert dabei
-selbst durch die Reiter.
+Hörfassung von Lernmodus unterscheidet. Eine Tour je Ansicht, drei bis fünf
+Schritte – Stückeliste, Editor, Sprecher, Hörfassung, Lernmodus, Karteikarten –
+und jede startet, wenn diese Ansicht zum ersten Mal offen ist.
+
+Der erste Versuch ließ eine einzige Tour durch die Reiter wandern. Das ging
+schief: Wer im Lernmodus auf das Fragezeichen drückte, wurde zuerst zu den
+Sprechern geschickt, und in der Hörfassung erklärte die Tour das Ziehen von
+Rechtecken. Hilfe muss dort anfangen, wo man steht – also gehört jede Tour
+genau einem Reiter, und `tourForTab()` sagt, welche.
 
 Abbrechen geht immer; das Fragezeichen oben rechts startet die Einführung zur
 gerade offenen Ansicht erneut. Wer die App weitergibt, setzt sie in der

@@ -27,7 +27,15 @@ import {
 
 import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import Tour from '../components/Tour/Tour'
-import { hasSeen, markSeen, onAskForTour, stepsFor, type TabValue } from '../lib/tour'
+import {
+  hasSeen,
+  markSeen,
+  onAskForTour,
+  stepsFor,
+  tourForTab,
+  type TabValue,
+  type TourId,
+} from '../lib/tour'
 import BlockEditModal from '../components/BlockList/BlockEditModal'
 import BlockList from '../components/BlockList/BlockList'
 import PdfCanvasEditor from '../components/PdfCanvasEditor/PdfCanvasEditor'
@@ -281,21 +289,25 @@ export default function EditorPage({ projectId, onBack }: Props) {
    * reading order – page, then position on the page – and renumbered.
    */
   /*
-   * Der Reiter wird gesteuert, nicht nur voreingestellt: Die Einführung
-   * blättert selbst dorthin, wo der nächste Schritt steht.
+   * Jeder Reiter hat seine eigene Einführung, und sie gehört dem Reiter, der
+   * gerade offen ist: Wer im Lernmodus auf das Fragezeichen drückt, will
+   * etwas über den Lernmodus wissen und nicht zuerst zu den Sprechern
+   * geschickt werden.
    */
   const [tab, setTab] = useState<string | null>('editor')
-  const [tour, setTour] = useState<'editor' | 'proben' | null>(() =>
-    hasSeen('editor') ? null : 'editor',
-  )
+  const [tour, setTour] = useState<TourId | null>(() => (hasSeen('editor') ? null : 'editor'))
 
   // Das Fragezeichen im Kopf fragt, welche Einführung hierher passt.
-  useEffect(() => onAskForTour(() => setTour(tab === 'rehearsal' ? 'proben' : 'editor')), [tab])
+  useEffect(
+    () => onAskForTour(() => setTour(tourForTab(tab as TabValue))),
+    [tab],
+  )
 
-  /** Die zweite Einführung wartet, bis der Lernmodus zum ersten Mal offen ist. */
+  /** Jeder Reiter erklärt sich beim ersten Öffnen von selbst. */
   const reiterWechsel = (wohin: string | null) => {
     setTab(wohin)
-    if (wohin === 'rehearsal' && !hasSeen('proben')) setTour('proben')
+    const naechste = tourForTab(wohin as TabValue)
+    if (!hasSeen(naechste)) setTour(naechste)
   }
 
   const tourZu = () => {
@@ -549,13 +561,9 @@ export default function EditorPage({ projectId, onBack }: Props) {
         </Tabs.Panel>
       </Tabs>
 
-      {tour && (
-        <Tour
-          steps={stepsFor(tour, schmal)}
-          onClose={tourZu}
-          onTab={(wohin: TabValue) => setTab(wohin)}
-        />
-      )}
+      {/* key: eine neue Tour fängt beim ersten Schritt an, nicht dort, wo die
+          vorige aufgehört hat. */}
+      {tour && <Tour key={tour} steps={stepsFor(tour, schmal)} onClose={tourZu} />}
 
       <AutoDetectModal
         opened={detectOpen}

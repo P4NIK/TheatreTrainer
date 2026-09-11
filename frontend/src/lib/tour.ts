@@ -6,6 +6,11 @@
  * Touren erklären es dort, wo es passiert: in der Stückeliste, im Editor und
  * beim Proben.
  *
+ * Eine Tour je Ansicht, und jede erklärt nur, was dort zu sehen ist. Der erste
+ * Versuch ließ eine einzige Tour durch die Reiter wandern – wer im Lernmodus
+ * auf das Fragezeichen drückte, landete zuerst bei den Sprechern. Hilfe muss
+ * dort anfangen, wo man steht.
+ *
  * Hier stehen nur die Texte und das Gedächtnis dafür, welche Tour schon lief.
  * Das Anzeigen macht components/Tour/Tour.tsx, das Auslösen die Seiten selbst –
  * jede weiß am besten, wann sie fertig aufgebaut ist.
@@ -15,7 +20,7 @@
  * neben einem Element steht und mitwandert – liegt ohnehin schon in Mantine.
  */
 
-export type TourId = 'stuecke' | 'editor' | 'proben'
+export type TourId = 'stuecke' | 'editor' | 'sprecher' | 'hoerfassung' | 'probe' | 'karten'
 
 /** Die Reiter des Editors, so wie Tabs sie nennt. */
 export type TabValue = 'editor' | 'speakers' | 'audio' | 'rehearsal' | 'cards'
@@ -29,8 +34,6 @@ export interface TourStep {
   target?: string
   title: string
   text: string
-  /** Dieser Reiter muss dafür offen sein. */
-  tab?: TabValue
   /** Nur auf Geräten mit Finger – oder nur auf denen mit Maus. */
   only?: 'touch' | 'desktop'
 }
@@ -92,47 +95,111 @@ export const TOURS: Tour[] = [
       {
         target: 'reiter',
         title: 'Weiter geht es oben',
-        text: 'Sprecher, Hörfassung, Lernmodus, Karteikarten – in dieser Reihenfolge. Was dort wartet, zeigt dir die nächste Einführung, sobald du den Lernmodus öffnest.',
+        text: 'Als Nächstes der Reiter „Sprecher“. Jeder Reiter erklärt sich beim ersten Öffnen selbst – und das Fragezeichen oben rechts holt die Erklärung jederzeit zurück.',
       },
     ],
   },
   {
-    id: 'proben',
-    title: 'Proben',
+    id: 'sprecher',
+    title: 'Sprecher',
     steps: [
       {
-        tab: 'speakers',
         target: 'meine-rolle',
         title: 'Welche Rolle ist deine?',
         text: 'Markiere sie hier. Im Durchlauf wird sie ausgespart – an ihrer Stelle steht eine Pause, denn die sprichst du selbst.',
       },
       {
-        tab: 'speakers',
         target: 'stimm-regler',
         title: 'Rollen unterscheiden',
-        text: 'Es gibt eine Stimme, und sie steht schon überall. Verschieden klingen die Rollen über Tonhöhe und Tempo. Das Dreieck daneben spielt eine Hörprobe.',
+        text: 'Es gibt eine Stimme, und sie steht schon überall. Verschieden klingen die Rollen über Tonhöhe und Tempo – ein paar Striche Unterschied genügen fürs Ohr.',
       },
       {
-        tab: 'audio',
+        target: 'hoerprobe',
+        title: 'Wie klingt das?',
+        text: 'Das Dreieck spricht einen Satz mit dieser Einstellung. Beim allerersten Mal lädt dabei die Stimme (rund 60 MB) und bleibt danach im Browser – auch ohne Internet.',
+      },
+    ],
+  },
+  {
+    id: 'hoerfassung',
+    title: 'Hörfassung',
+    steps: [
+      {
+        target: 'auswahl',
+        title: 'Welcher Teil',
+        text: 'Das ganze Stück, ein Seitenbereich – oder nur die Umgebung deiner eigenen Repliken. Für eine Szene, die morgen dran ist, ist das Letzte das Richtige.',
+      },
+      {
+        target: 'aussparen',
+        title: 'Deine Rolle als Pause',
+        text: 'Statt deiner Replik bleibt eine Lücke in genau ihrer Länge – dein Einsatz kommt also zeitlich richtig. Dafür wird sie im Hintergrund trotzdem erzeugt.',
+      },
+      {
         target: 'audio-erzeugen',
-        title: 'Die Hörfassung',
-        text: 'Das ganze Stück am Stück, als eine Datei zum Mitlaufen – im Auto, beim Spülen. Beim allerersten Mal lädt dabei die Stimme (rund 60 MB), danach nie wieder.',
+        title: 'Eine Datei zum Mitlaufen',
+        text: 'Am Ende steht eine WAV-Datei: anhören oder herunterladen, im Auto, beim Spülen. Der zweite Durchlauf ist schnell – erzeugt wird nur, was sich geändert hat.',
       },
+    ],
+  },
+  {
+    id: 'probe',
+    title: 'Lernmodus',
+    steps: [
       {
-        tab: 'rehearsal',
         target: 'probe-starten',
-        title: 'Die Probe',
-        text: 'Kein Abspielen, sondern eine Probe: Es wird vorgelesen, und bei deiner Replik wartet der Rechner auf dich. Er merkt sich, wo ihr aufgehört habt.',
+        title: 'Kein Abspielen, eine Probe',
+        text: 'Es wird vorgelesen, und bei deiner Replik wartet der Rechner auf dich. Wo ihr aufgehört habt, merkt er sich – beim nächsten Mal geht es dort weiter.',
       },
       {
-        tab: 'rehearsal',
+        target: 'ausschnitt',
+        title: 'Welcher Teil',
+        text: 'Der ganze Akt oder nur die Stellen um deine eigenen Repliken herum. „Wie viel Hilfe“ darunter entscheidet, ob du den Text der anderen mitliest oder nur hörst.',
+      },
+      {
         target: 'auswerten',
-        title: 'Gesagtes auswerten',
+        title: 'Mitschneiden und auswerten',
         text: 'Wer mag, lässt zuhören: Die App vergleicht Wort für Wort mit dem Text und zeigt, wo es hakte. Dafür lädt sie einmal die Spracherkennung – das dauert und braucht Platz.',
       },
     ],
   },
+  {
+    id: 'karten',
+    title: 'Karteikarten',
+    steps: [
+      {
+        target: 'stapel',
+        title: 'Jede Replik eine Karte',
+        text: 'Du hörst das Stichwort, sprichst – und bewertest dich selbst. Was saß, kommt später wieder; was nicht saß, schon morgen.',
+      },
+      {
+        target: 'stichwort',
+        title: 'Wie viel vorher',
+        text: '„Stichwort“ sagt, wie viele Repliken vor deiner gespielt werden. Null heißt: Text aufdecken und sprechen. Darüber wählst du, ob nur Fälliges drankommt.',
+      },
+      {
+        target: 'sitzung-starten',
+        title: 'Eine Sitzung',
+        text: 'Danebengegangene Karten kommen drei Karten später noch einmal, wackelige zehn – so wird eine lange Sitzung von selbst zur Wiederholung.',
+      },
+    ],
+  },
 ]
+
+/** Welche Einführung zu einem Reiter des Editors gehört. */
+export function tourForTab(tab: TabValue): TourId {
+  switch (tab) {
+    case 'speakers':
+      return 'sprecher'
+    case 'audio':
+      return 'hoerfassung'
+    case 'rehearsal':
+      return 'probe'
+    case 'cards':
+      return 'karten'
+    default:
+      return 'editor'
+  }
+}
 
 export function tourById(id: TourId): Tour | undefined {
   return TOURS.find((tour) => tour.id === id)

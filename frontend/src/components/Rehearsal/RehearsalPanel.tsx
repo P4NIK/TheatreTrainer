@@ -363,14 +363,16 @@ export default function RehearsalPanel({
 
           <Divider my="xs" label="Welcher Teil" labelPosition="left" />
 
-          <SelectionCard
-            project={asRole}
-            blocks={blocks}
-            settings={selection}
-            onChange={setSelection}
-            selection={picked}
-            total={blocks.length}
-          />
+          <div data-tour="ausschnitt">
+            <SelectionCard
+              project={asRole}
+              blocks={blocks}
+              settings={selection}
+              onChange={setSelection}
+              selection={picked}
+              total={blocks.length}
+            />
+          </div>
 
           <Switch
             checked={includeDirections}
