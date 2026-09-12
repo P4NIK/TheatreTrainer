@@ -21,8 +21,12 @@ export interface SttState {
   /** 0 … 1 while loading, as far as the sizes are known. */
   progress: number
   error: string
-  /** Starts the download, or does nothing if it already ran. */
-  load: () => void
+  /**
+   * Starts the download, or does nothing if it already ran. The promise is
+   * settled when the model is either there or known to be missing – wer erst
+   * beim Starten einer Probe lädt, wartet darauf.
+   */
+  load: () => Promise<void>
 }
 
 export function useStt(): SttState {
@@ -31,6 +35,7 @@ export function useStt(): SttState {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
   const seen = useRef(new Map<string, { loaded: number; total: number }>())
+  const laeuft = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
     // The files arrive one after another; the bar should not jump back to zero
@@ -47,8 +52,11 @@ export function useStt(): SttState {
     })
   }, [])
 
-  const load = useCallback(() => {
-    if (stt.ready() || loading) return
+  const load = useCallback((): Promise<void> => {
+    if (stt.ready()) return Promise.resolve()
+    // Zwei Anstöße – der Schalter und gleich danach der Startknopf – warten
+    // auf denselben Ladevorgang, statt ihn zweimal anzustoßen.
+    if (laeuft.current) return laeuft.current
     setLoading(true)
     setError('')
     /*
@@ -61,12 +69,17 @@ export function useStt(): SttState {
      * wieder da.
      */
     freeVoices()
-    stt
+    const lauf = stt
       .ensure()
       .then(() => setReady(true))
       .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [loading])
+      .finally(() => {
+        setLoading(false)
+        laeuft.current = null
+      })
+    laeuft.current = lauf
+    return lauf
+  }, [])
 
   return { ready, loading, progress, error, load }
 }

@@ -8,6 +8,15 @@ import '@mantine/notifications/styles.css'
 import './index.css'
 
 import App from './App'
+import { defuseCrashes } from './lib/prefs'
+
+/*
+ * Vor dem ersten Bild: Was lief noch, als die Seite das letzte Mal endete,
+ * ohne sich abzumelden? Das war ein Absturz – der Schalter dazu wird
+ * ausgeschaltet, bevor irgendeine Ansicht ihn lesen kann. Später wäre es zu
+ * spät: Die Reiter lesen ihre Einstellungen beim Aufbau.
+ */
+defuseCrashes()
 
 const theme = createTheme({
   primaryColor: 'indigo',

@@ -14,12 +14,8 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconDatabase, IconDownload, IconPlayerPlay } from '@tabler/icons-react'
 
-import {
-  buildSelection,
-  defaultSelection,
-  selectionSuffix,
-  type SelectionSettings,
-} from '../../lib/selection'
+import { bool, globalKey, pick, projectKey, usePrefs } from '../../lib/prefs'
+import { buildSelection, readSelection, selectionSuffix } from '../../lib/selection'
 import { DIRECTION_KEY, type Block, type Project, type Speakers } from '../../types'
 import SelectionCard from './SelectionCard'
 import { useSynthesis } from './useSynthesis'
@@ -33,12 +29,18 @@ interface Props {
 }
 
 export default function SynthesizePanel({ project, blocks, speakers, onBeforeStart }: Props) {
-  const [skipMyRole, setSkipMyRole] = useState(false)
-  const [includeDirections, setIncludeDirections] = useState(true)
-  const [selection, setSelection] = useState<SelectionSettings>({
-    ...defaultSelection,
-    toPage: Math.max(1, project.pageCount),
-  })
+  /*
+   * Die beiden Schalter gehören zur Person und gelten für jedes Stück; der
+   * Ausschnitt gehört zu diesem Buch und liegt bei ihm.
+   */
+  const [schalter, setSchalter] = usePrefs(globalKey('hoerfassung'), (raw) => ({
+    skipMyRole: bool(pick(raw, 'skipMyRole'), false),
+    includeDirections: bool(pick(raw, 'includeDirections'), true),
+  }))
+  const { skipMyRole, includeDirections } = schalter
+  const [selection, setSelection] = usePrefs(projectKey(project.id, 'hoerfassung'), (raw) =>
+    readSelection(raw, project.pageCount, project.myRole !== ''),
+  )
   // The run happens in this tab now; the hook holds what used to be a job.
   const { state, cache, start: startRun, cancel, clearCache } = useSynthesis(project, blocks, speakers)
   /** Suffix of the run that produced the audio – the settings may change afterwards. */
@@ -114,7 +116,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
           <Switch
             data-tour="aussparen"
             checked={skipMyRole}
-            onChange={(e) => setSkipMyRole(e.currentTarget.checked)}
+            onChange={(e) => setSchalter((s) => ({ ...s, skipMyRole: e.currentTarget.checked }))}
             label={
               project.myRole
                 ? `Meine Rolle (${project.myRole}) als Sprechpause aussparen`
@@ -131,7 +133,7 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
           />
           <Switch
             checked={includeDirections}
-            onChange={(e) => setIncludeDirections(e.currentTarget.checked)}
+            onChange={(e) => setSchalter((s) => ({ ...s, includeDirections: e.currentTarget.checked }))}
             label="Regieanweisungen mitlesen"
             description={
               directions.length === 1

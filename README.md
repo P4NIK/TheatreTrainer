@@ -132,6 +132,39 @@ abgedunkelten Bild ist ein Kästchen mit sehr großem Schatten.
 6. **Lernmodus** – Rolle und Ausschnitt wählen, „Probe starten“, und der
    Rechner spielt dir die Szene vor, bis du dran bist (siehe unten).
 
+### Was die Reiter behalten
+
+Die Schalter sind Gewohnheit, nicht Zustand: Wer Regieanweisungen nicht hören
+will, will sie morgen auch nicht hören. Also merkt sich jeder Reiter, wie er
+gestellt war – im localStorage, in zwei Schubladen:
+
+| Schublade | Schlüssel | Was darin liegt |
+| --- | --- | --- |
+| zur Person | `theater-opt/<reiter>` | mitlesen, aufdecken, mitschneiden, auswerten, Pausenlänge, Regieanweisungen, „nur Fälliges“, Kartenzahl, Stichwort |
+| zum Stück | `theater-opt/<stück>/<reiter>` | Rolle, Ausschnitt, Aufbau des Textbuchs für das Erkennen, Blocklistenfilter |
+
+Die Trennung hat einen Grund: Eine Seitenzahl aus einem anderen Buch wäre
+Unsinn, eine Gewohnheit dagegen gilt auch für das nächste Stück. Zurückgelesen
+wird nie blind – jeder Wert geht durch einen Prüfer (`lib/prefs.ts`), und eine
+gemerkte Auswahl „Seite 40–59“ schrumpft mit, wenn das Stück auf zwölf Seiten
+gekürzt wurde. In der Technik-Prüfung wirft *Einstellungen vergessen* alles
+weg.
+
+Zwei Schalter sind Wagnisse, weil sie erst etwas herunterladen müssen:
+
+- **Geladen wird beim Starten, nicht beim Öffnen.** Ein gemerktes „Gesagtes
+  auswerten“ holt die 200 MB nicht beim Aufschlagen des Reiters, sondern erst
+  bei „Probe starten“ – mit Fortschrittsbalken daneben, statt mit Stille bei
+  der ersten Replik.
+- **Eine Zündschnur gegen die Wiederholung.** Solange so ein Schalter an und
+  sein Reiter offen ist, liegt eine Marke in `theater-wagnis`. Beim Ausschalten,
+  beim Reiterwechsel und bei einem `pagehide` – das auch beim Schließen und
+  Wegwischen kommt – wird sie gelöscht. Brennt sie beim nächsten Start noch,
+  hat die Seite es nicht überlebt: Dann geht genau dieser Schalter aus, bevor
+  irgendeine Ansicht ihn zu sehen bekommt, und der Reiter sagt, warum. Ohne das
+  käme die Seite in dem Zustand zurück, der sie umgebracht hat – und wieder,
+  und wieder.
+
 ### Blöcke automatisch erkennen
 
 Ein Theaterstück ist in Spalten gesetzt: Sprechername und Regieanweisungen am
@@ -356,7 +389,9 @@ Fünf Zustände, farbig: *sitzt*, *fast*, *anders gesagt*, *nicht gehört*,
 hat – damit nachvollziehbar bleibt, wer sich verhört hat.
 
 Erkannt wird mit **Whisper (`base`)**, das beim ersten Einschalten einmal
-geladen wird (rund 200 MB) und danach im Browser bleibt. Eine Replik dauert
+geladen wird (rund 200 MB) und danach im Browser bleibt. Der Schalter wird
+gemerkt, das Laden aber nicht vorgezogen – und übersteht die Seite es nicht,
+ist er beim nächsten Start wieder aus (siehe *Was die Reiter behalten*). Eine Replik dauert
 etwa eine Sekunde – und das reicht, weil die Erkennung läuft, während die
 Auflösung abgespielt wird.
 

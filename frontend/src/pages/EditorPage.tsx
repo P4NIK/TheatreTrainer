@@ -27,6 +27,7 @@ import {
 
 import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
 import Tour from '../components/Tour/Tour'
+import { oneOf, projectKey, usePrefs } from '../lib/prefs'
 import {
   hasSeen,
   markSeen,
@@ -102,7 +103,11 @@ export default function EditorPage({ projectId, onBack }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [page, setPage] = useState(1)
-  const [filter, setFilter] = useState<'page' | 'all'>('page')
+  /* „Nur diese Seite“ oder „alle Blöcke“ – eine Gewohnheit, kein Zustand. */
+  const [filter, setFilter] = usePrefs(projectKey(projectId, 'blockliste'), (raw) =>
+    // Ein nackter Wert, kein Bündel: hier gibt es nur diese eine Einstellung.
+    oneOf(raw, ['page', 'all'] as const, 'page'),
+  )
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<{ block: Block; isNew: boolean } | null>(null)
   const [detectOpen, setDetectOpen] = useState(false)
@@ -568,6 +573,7 @@ export default function EditorPage({ projectId, onBack }: Props) {
       <AutoDetectModal
         opened={detectOpen}
         onClose={() => setDetectOpen(false)}
+        projectId={projectId}
         fileUrl={pdfUrl}
         currentPage={page}
         existing={blocks}

@@ -64,6 +64,7 @@ import { encodeWav } from '../lib/audio'
 import { ModelStore, opfsStore, requestPersistence, storageState } from '../lib/storage'
 import { freeVoices } from '../lib/engine'
 import { precisionFor, stt, toMono16k, WHISPER_BYTES } from '../lib/stt'
+import { forgetPrefs } from '../lib/prefs'
 import { forgetTours } from '../lib/tour'
 import { PiperPool } from '../lib/synth'
 import { VOICES } from '../lib/voices'
@@ -457,6 +458,20 @@ export default function DiagnosePage({ onBack }: Props) {
           }}
         >
           Einführungen zurücksetzen
+        </Button>
+        <Button
+          variant="subtle"
+          color="gray"
+          size="compact-sm"
+          onClick={() => {
+            forgetPrefs()
+            notifications.show({
+              message:
+                'Gemerkte Einstellungen vergessen. Jeder Reiter steht beim nächsten Öffnen wieder auf Vorgabe.',
+            })
+          }}
+        >
+          Einstellungen vergessen
         </Button>
         {bericht && (
           <Textarea value={bericht} readOnly autosize minRows={6} onFocus={(e) => e.currentTarget.select()} />
