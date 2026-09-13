@@ -603,6 +603,37 @@ einen Absturz, steht in der Technik-Prüfung unter *Letzter Lauf* zum Kopieren
 und hängt unten am Bericht. Geschrieben wird gesammelt, höchstens einmal pro
 Sekunde – bei einem Absturz fehlt damit höchstens die letzte Sekunde.
 
+### Wenn eine Ansicht abstürzt
+
+Ein Fehler beim Zeichnen wirft in React die ganze Oberfläche weg – zurück
+bleibt ein weißes Fenster, und der Grund steht nur in der Entwicklerkonsole,
+die auf einem Telefon niemand öffnet. Deshalb hängt um jeden Reiter ein
+Fangnetz (`components/Fehlerfang`): Der Fehler geht ins Protokoll und damit in
+den Bericht, an der Stelle der Ansicht steht eine Meldung mit dem Wortlaut,
+und *Noch einmal versuchen* baut nur diese eine Ansicht neu auf. Die übrigen
+Reiter laufen weiter.
+
+Ein Beispiel aus der Praxis, das genau so gefunden wurde:
+
+```tsx
+// falsch – läuft später, dann ist currentTarget null
+onChange={(e) => setSchalter((s) => ({ ...s, includeDirections: e.currentTarget.checked }))}
+
+// richtig – erst den Wert holen, dann den Zustand ändern
+onChange={(e) => {
+  const an = e.currentTarget.checked
+  setSchalter((s) => ({ ...s, includeDirections: an }))
+}}
+```
+
+Tückisch daran: In der gebauten Fassung fällt das oft nicht auf, weil React die
+Funktion meist sofort auswertet, solange das Ereignis noch gilt. Im Dev-Server
+mit `StrictMode` ruft React sie absichtlich ein zweites Mal auf – beim
+Neuzeichnen, wenn `currentTarget` längst null ist. Die Prüfung
+`tools/schalter.mjs` legt deshalb **jeden Schalter jedes Reiters gegen
+den Dev-Server** um und prüft, dass weder ein Fehler in der Konsole steht noch
+das Fangnetz zuschlägt.
+
 ### Technik-Prüfung
 
 Unter der Stückeliste steht *Läuft alles auf diesem Gerät?* (`#/technik`). Die

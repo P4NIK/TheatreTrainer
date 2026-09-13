@@ -116,7 +116,19 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
           <Switch
             data-tour="aussparen"
             checked={skipMyRole}
-            onChange={(e) => setSchalter((s) => ({ ...s, skipMyRole: e.currentTarget.checked }))}
+            /*
+             * Erst den Wert holen, dann den Zustand ändern.
+             *
+             * `e.currentTarget` gilt nur, solange der Klick behandelt wird.
+             * Die Funktion, die man setSchalter mitgibt, läuft aber später –
+             * und in der Entwicklungsfassung ruft React sie zur Sicherheit
+             * sogar zweimal auf, beim zweiten Mal während des Neuzeichnens.
+             * Dann ist currentTarget null, und die ganze Seite ist weiß.
+             */
+            onChange={(e) => {
+              const an = e.currentTarget.checked
+              setSchalter((s) => ({ ...s, skipMyRole: an }))
+            }}
             label={
               project.myRole
                 ? `Meine Rolle (${project.myRole}) als Sprechpause aussparen`
@@ -133,7 +145,10 @@ export default function SynthesizePanel({ project, blocks, speakers, onBeforeSta
           />
           <Switch
             checked={includeDirections}
-            onChange={(e) => setSchalter((s) => ({ ...s, includeDirections: e.currentTarget.checked }))}
+            onChange={(e) => {
+              const an = e.currentTarget.checked
+              setSchalter((s) => ({ ...s, includeDirections: an }))
+            }}
             label="Regieanweisungen mitlesen"
             description={
               directions.length === 1

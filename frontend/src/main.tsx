@@ -8,6 +8,7 @@ import '@mantine/notifications/styles.css'
 import './index.css'
 
 import App from './App'
+import Fehlerfang from './components/Fehlerfang/Fehlerfang'
 import { defuseCrashes } from './lib/prefs'
 
 /*
@@ -43,7 +44,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-right" />
-      <App />
+      {/* Das letzte Netz: Was kein Reiter abfängt, endet wenigstens als
+          Meldung und nicht als weiße Seite. */}
+      <Fehlerfang name="Die Seite">
+        <App />
+      </Fehlerfang>
     </MantineProvider>
   </StrictMode>,
 )

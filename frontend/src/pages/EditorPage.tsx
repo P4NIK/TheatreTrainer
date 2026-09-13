@@ -26,6 +26,7 @@ import {
 } from '@tabler/icons-react'
 
 import AutoDetectModal from '../components/AutoDetect/AutoDetectModal'
+import Fehlerfang from '../components/Fehlerfang/Fehlerfang'
 import Tour from '../components/Tour/Tour'
 import { oneOf, projectKey, usePrefs } from '../lib/prefs'
 import {
@@ -476,93 +477,103 @@ export default function EditorPage({ projectId, onBack }: Props) {
         </Tabs.List>
 
         <Tabs.Panel value="editor">
-          {/*
-            Nebeneinander, solange Platz ist; darunter untereinander. Auf dem
-            Telefon bekommt das PDF eine feste Höhe statt der ganzen
-            Fensterhöhe – sonst stünde die Blockliste immer unterhalb des
-            sichtbaren Bereichs und niemand fände sie.
-          */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: schmal ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 340px',
-              gap: 16,
-              height: schmal ? undefined : 'calc(100vh - 210px)',
-            }}
-          >
+          <Fehlerfang name="Editor">
+            {/*
+              Nebeneinander, solange Platz ist; darunter untereinander. Auf dem
+              Telefon bekommt das PDF eine feste Höhe statt der ganzen
+              Fensterhöhe – sonst stünde die Blockliste immer unterhalb des
+              sichtbaren Bereichs und niemand fände sie.
+            */}
             <div
-              data-tour="pdf"
-              style={{ height: schmal ? '65vh' : '100%', minHeight: 0, minWidth: 0 }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: schmal ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 340px',
+                gap: 16,
+                height: schmal ? undefined : 'calc(100vh - 210px)',
+              }}
             >
-            <PdfCanvasEditor
-              fileUrl={pdfUrl}
-              blocks={blocks}
-              speakers={speakers}
-              page={page}
-              onPageChange={setPage}
-              onNumPages={onNumPages}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onRectDrawn={onRectDrawn}
-            />
+              <div
+                data-tour="pdf"
+                style={{ height: schmal ? '65vh' : '100%', minHeight: 0, minWidth: 0 }}
+              >
+              <PdfCanvasEditor
+                fileUrl={pdfUrl}
+                blocks={blocks}
+                speakers={speakers}
+                page={page}
+                onPageChange={setPage}
+                onNumPages={onNumPages}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onRectDrawn={onRectDrawn}
+              />
+              </div>
+              <div data-tour="blockliste" style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <BlockList
+                projectId={projectId}
+                blocks={blocks}
+                speakers={speakers}
+                page={page}
+                filter={filter}
+                onFilterChange={setFilter}
+                selectedId={selectedId}
+                onSelect={selectBlock}
+                onEdit={(b) => setDraft({ block: b, isNew: false })}
+                onDelete={deleteBlock}
+                onReorder={mutateBlocks}
+              />
+              </div>
             </div>
-            <div data-tour="blockliste" style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <BlockList
-              projectId={projectId}
-              blocks={blocks}
-              speakers={speakers}
-              page={page}
-              filter={filter}
-              onFilterChange={setFilter}
-              selectedId={selectedId}
-              onSelect={selectBlock}
-              onEdit={(b) => setDraft({ block: b, isNew: false })}
-              onDelete={deleteBlock}
-              onReorder={mutateBlocks}
-            />
-            </div>
-          </div>
+          </Fehlerfang>
         </Tabs.Panel>
 
         <Tabs.Panel value="speakers">
-          <SpeakerConfig
-            projectId={project.id}
-            blocks={blocks}
-            speakers={speakers}
-            onChange={mutateSpeakers}
-            myRole={project.myRole}
-            onMyRoleChange={setMyRole}
-          />
+          <Fehlerfang name="Sprecher">
+            <SpeakerConfig
+              projectId={project.id}
+              blocks={blocks}
+              speakers={speakers}
+              onChange={mutateSpeakers}
+              myRole={project.myRole}
+              onMyRoleChange={setMyRole}
+            />
+          </Fehlerfang>
         </Tabs.Panel>
 
         <Tabs.Panel value="audio">
-          <SynthesizePanel
-            project={project}
-            blocks={blocks}
-            speakers={speakers}
-            onBeforeStart={save}
-          />
+          <Fehlerfang name="Hörfassung">
+            <SynthesizePanel
+              project={project}
+              blocks={blocks}
+              speakers={speakers}
+              onBeforeStart={save}
+            />
+          </Fehlerfang>
         </Tabs.Panel>
 
         <Tabs.Panel value="rehearsal">
-          <RehearsalPanel
-            project={project}
-            blocks={blocks}
-            speakers={speakers}
-            onCorrectBlock={correctBlock}
-            onBeforeStart={save}
-          />
+          <Fehlerfang name="Lernmodus">
+            <RehearsalPanel
+              project={project}
+              blocks={blocks}
+              speakers={speakers}
+              onCorrectBlock={correctBlock}
+              onBeforeStart={save}
+            />
+          </Fehlerfang>
         </Tabs.Panel>
 
         <Tabs.Panel value="cards">
-          <CardsPanel
-            project={project}
-            blocks={blocks}
-            speakers={speakers}
-            onCorrectBlock={correctBlock}
-            onBeforeStart={save}
-            onPremiereChange={setPremiere}
-          />
+          <Fehlerfang name="Karteikarten">
+            <CardsPanel
+              project={project}
+              blocks={blocks}
+              speakers={speakers}
+              onCorrectBlock={correctBlock}
+              onBeforeStart={save}
+              onPremiereChange={setPremiere}
+            />
+          </Fehlerfang>
         </Tabs.Panel>
       </Tabs>
 
