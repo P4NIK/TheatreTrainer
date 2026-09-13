@@ -107,6 +107,8 @@ export interface RunOptions {
   gapMs?: number
   skippedRoleMs?: number
   onProgress?: (progress: { done: number; total: number; message: string } & RunStats) => void
+  /** Eine Zeile fürs Protokoll – siehe protokoll.ts. */
+  note?: (text: string) => void
   signal?: AbortSignal
   /**
    * Where the track is written while it is being made.
@@ -182,6 +184,7 @@ export async function runSynthesis(
       skippedRoleMs: options.skippedRoleMs ?? SKIPPED_ROLE_MS,
       render,
       onProgress: options.onProgress,
+      note: options.note,
       signal: options.signal,
       sink,
     })
@@ -192,6 +195,9 @@ export async function runSynthesis(
   }
 
   const { samples, sampleCount, stats, message } = rendered
+  // Was der Plan schon wusste (fehlende Stimmen) und was der Lauf gelernt hat
+  // (Blöcke, die Piper nicht wollte) – beides gehört in dieselbe Liste.
+  const problems = [...plan.problems, ...rendered.problems]
 
   if (sink) {
     await sink.patch(0, wavHeader(sampleCount, sampleRate))
@@ -203,7 +209,7 @@ export async function runSynthesis(
       sampleCount,
       stats,
       message,
-      problems: plan.problems,
+      problems,
     }
   }
 
@@ -216,7 +222,7 @@ export async function runSynthesis(
     sampleCount,
     stats,
     message,
-    problems: plan.problems,
+    problems,
   }
 }
 
@@ -240,6 +246,13 @@ export type FromWorker =
   | { id: number; type: 'synthesize'; samples: Int16Array; sampleRate: number; phonemizeMs: number; inferMs: number }
   | { id: number; type: 'release' }
   | { id: number; type: 'error'; error: string }
+  /*
+   * Keine Antwort auf eine Frage, sondern ein Zuruf: Der Phonemisierer
+   * meldet, dass er aufgefrischt wurde oder dass espeak-ng etwas ausgegeben
+   * hat. Solche Nachrichten tragen keine id – sie gehören zu niemandes
+   * Wartenummer und landen im Protokoll.
+   */
+  | { id: 0; type: 'note'; kind: string; text: string }
 
 /**
  * Piper on a thread of its own.
@@ -265,6 +278,8 @@ export class PiperPool {
     /** Only for tests and for a page that wants to build the worker itself. */
     createWorker?: () => Worker
     onVoiceProgress?: (voice: string, progress: DownloadProgress) => void
+    /** Zurufe aus dem Worker – fürs Protokoll. */
+    onNote?: (note: { kind: string; text: string }) => void
   }
 
   // Written out rather than declared in the parameter list: the project
@@ -344,16 +359,31 @@ export class PiperPool {
 
     this.worker.onmessage = (event: MessageEvent<FromWorker>) => {
       const message = event.data
+      if (message.type === 'note') {
+        this.options.onNote?.({ kind: message.kind, text: message.text })
+        return
+      }
       const waiting = this.pending.get(message.id)
       if (!waiting) return
       this.pending.delete(message.id)
       if (message.type === 'error') waiting.reject(new Error(message.error))
       else waiting.resolve(message)
     }
+    /*
+     * Ein Worker, der so stirbt, ist hin – WASM-Modul, Stimme und alles.
+     * Ihn stehen zu lassen hieße, jede weitere Anfrage in denselben Tod zu
+     * schicken; weggeräumt baut der nächste Aufruf einen frischen auf und
+     * lädt die Stimme aus OPFS nach. Das kostet eine Sekunde und rettet den
+     * Rest des Laufs.
+     */
     this.worker.onerror = (event) => {
       const error = new Error(event.message || 'Der Sprach-Worker ist abgestürzt')
+      this.options.onNote?.({ kind: 'tot', text: error.message })
       for (const { reject } of this.pending.values()) reject(error)
       this.pending.clear()
+      this.worker?.terminate()
+      this.worker = null
+      this.voices.clear()
     }
     return this.worker
   }

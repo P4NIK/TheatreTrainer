@@ -21,7 +21,24 @@ import { IconAlertTriangle, IconHistory, IconPlayerPlay, IconRepeat } from '@tab
 
 
 import { speakerNames } from '../../lib/blocks'
-import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
+import {
+  bool,
+  globalKey,
+  pick,
+  projectKey,
+  str,
+  usePrefs,
+  useRisk,
+  wasDefused,
+  forgetDefused,
+} from '../../lib/prefs'
+import {
+  buildSelection,
+  defaultSelection,
+  readSelection,
+  type SelectionSettings,
+} from '../../lib/selection'
+import { log } from '../../lib/protokoll'
 import { store } from '../../lib/store'
 import {
   anchorAt,
@@ -43,9 +60,15 @@ import {
   type Speakers,
 } from '../../types'
 import SelectionCard from '../SynthesizePanel/SelectionCard'
-import RehearsalRun, { type RunOptions } from './RehearsalRun'
+import RehearsalRun from './RehearsalRun'
+import { readRunOptions, type RunOptions } from './runOptions'
 import { useBlockAudio } from './useBlockAudio'
 import { sttHint, useStt } from './useStt'
+
+/** „Wie viel Hilfe“ – für alle Stücke dieselbe Gewohnheit. */
+const HILFE_KEY = globalKey('lernmodus')
+/** Der Schalter, der die Seite umbringen kann. */
+const AUSWERTEN = { pref: HILFE_KEY, field: 'analyze' }
 
 /** Why the run starts where it starts – this drives the line under the field. */
 type StartReason = 'begin' | 'page' | 'page-empty' | 'resume' | 'resume-nearest' | 'resume-lost'
@@ -75,21 +98,59 @@ export default function RehearsalPanel({
   onCorrectBlock,
   onBeforeStart,
 }: Props) {
-  const [role, setRole] = useState(project.myRole)
-  const [selection, setSelection] = useState<SelectionSettings>({
-    ...defaultSelection,
-    mode: project.myRole ? 'role' : 'all',
-    toPage: Math.max(1, project.pageCount),
+  /*
+   * Was zum Stück gehört, liegt beim Stück: welche Rolle, welcher Teil. Die
+   * Rolle aus dem Projekt ist nur die Vorgabe – hier übt man auch mal eine
+   * andere, und dann soll es die morgen noch sein.
+   */
+  const [stueck, setStueck] = usePrefs(projectKey(project.id, 'lernmodus'), (raw) => {
+    const role = str(pick(raw, 'role'), project.myRole)
+    return {
+      role,
+      selection: readSelection(pick(raw, 'selection'), project.pageCount, role !== '', {
+        ...defaultSelection,
+        mode: role ? 'role' : 'all',
+        toPage: Math.max(1, project.pageCount),
+      }),
+    }
   })
-  const [includeDirections, setIncludeDirections] = useState(true)
-  const [options, setOptions] = useState<RunOptions>({
-    showText: true,
-    revealOwn: false,
-    autoAdvance: null,
-    record: false,
-    analyze: false,
-  })
+  const { role, selection } = stueck
+  const setRole = useCallback(
+    (wer: string) => setStueck((s) => ({ ...s, role: wer })),
+    [setStueck],
+  )
+  const setSelection = useCallback(
+    (next: SelectionSettings) => setStueck((s) => ({ ...s, selection: next })),
+    [setStueck],
+  )
+
+  /* Wie viel Hilfe man mag, gehört zur Person und gilt für jedes Stück. */
+  const [hilfe, setHilfe] = usePrefs(HILFE_KEY, (raw) => ({
+    includeDirections: bool(pick(raw, 'includeDirections'), true),
+    ...readRunOptions(raw),
+  }))
+  const { includeDirections } = hilfe
+  const options = useMemo<RunOptions>(
+    () => ({
+      showText: hilfe.showText,
+      revealOwn: hilfe.revealOwn,
+      autoAdvance: hilfe.autoAdvance,
+      record: hilfe.record,
+      analyze: hilfe.analyze,
+    }),
+    [hilfe],
+  )
+  const setIncludeDirections = (an: boolean) => setHilfe((h) => ({ ...h, includeDirections: an }))
   const stt = useStt()
+
+  /*
+   * Die Spracherkennung ist das Wagnis: 200 MB neben der Stimme, und auf dem
+   * Telefon hat Safari die Seite dabei schon beendet. Solange der Schalter an
+   * und dieser Reiter offen ist, brennt die Zündschnur – überlebt die Seite
+   * das nicht, ist der Schalter beim nächsten Start aus.
+   */
+  useRisk(AUSWERTEN, hilfe.analyze)
+  const [abgestuerzt, setAbgestuerzt] = useState(() => wasDefused(AUSWERTEN))
   const [running, setRunning] = useState(false)
   const [preparing, setPreparing] = useState<number | null>(null)
   const [starting, setStarting] = useState(false)
@@ -176,7 +237,7 @@ export default function RehearsalPanel({
   })()
 
   const set = <K extends keyof RunOptions>(key: K, value: RunOptions[K]) =>
-    setOptions((o) => ({ ...o, [key]: value }))
+    setHilfe((h) => ({ ...h, [key]: value }))
 
   const missing = useMemo(() => {
     const need = new Set<string>()
@@ -203,10 +264,24 @@ export default function RehearsalPanel({
     setPreparing(null)
   }
 
+  /*
+   * Ein gemerkter Schalter lädt nichts von allein.
+   *
+   * „Gesagtes auswerten“ steht vielleicht seit letzter Woche auf ein – 200 MB
+   * beim Öffnen eines Reiters nachzuladen wäre eine böse Überraschung. Also
+   * passiert es erst hier, wenn wirklich geprobt wird, und mit dem Fortschritt
+   * am Schalter statt mit Stille bei der ersten Replik.
+   */
   const start = async (at: number) => {
     setStarting(true)
     try {
       await onBeforeStart()
+      log(
+        `Lernmodus gestartet: ${stats.total} Schritte ab ${at + 1}, Rolle „${role || 'keine'}“, ` +
+          `${options.record ? 'mit Mitschnitt' : 'ohne Mitschnitt'}` +
+          `${options.analyze ? ' und Auswertung' : ''}, Stück „${project.name}“`,
+      )
+      if (options.analyze && !stt.ready) await stt.load()
       setRunIndex(at)
       setRunning(true)
     } finally {
@@ -248,8 +323,10 @@ export default function RehearsalPanel({
    */
   const resume = () => {
     if (!progress) return
-    setRole(progress.role)
-    if (progress.selection) setSelection(progress.selection)
+    setStueck((s) => ({
+      role: progress.role,
+      selection: progress.selection ?? s.selection,
+    }))
     setStartPage(null)
     setResuming(true)
     setPending('resume')
@@ -427,11 +504,26 @@ export default function RehearsalPanel({
             checked={options.record}
             onChange={(e) => {
               const on = e.currentTarget.checked
-              setOptions((o) => ({ ...o, record: on, analyze: on && o.analyze }))
+              setHilfe((h) => ({ ...h, record: on, analyze: on && h.analyze }))
             }}
             label="Mitschneiden, was ich sage"
             description="Die Aufnahme bleibt im Browser und lässt sich direkt nach der Auflösung anhören. Der Durchlauf wartet dann, bis du auf „Weiter“ drückst."
           />
+          {abgestuerzt && (
+            <Alert
+              color="orange"
+              icon={<IconAlertTriangle size={18} />}
+              withCloseButton
+              onClose={() => {
+                forgetDefused(AUSWERTEN)
+                setAbgestuerzt(false)
+              }}
+            >
+              Beim letzten Mal hat die Seite das Auswerten nicht überlebt – deshalb ist der
+              Schalter jetzt aus. Er lässt sich wieder einschalten; hilft es nicht, geht die Probe
+              auch ohne Auswertung, und die Technik-Prüfung zeigt, wie oft das passiert ist.
+            </Alert>
+          )}
           <Switch
             data-tour="auswerten"
             checked={options.analyze}
@@ -439,7 +531,7 @@ export default function RehearsalPanel({
               const an = e.currentTarget.checked
               set('analyze', an)
               // Lieber jetzt laden, mit Fortschritt, als bei der ersten Replik.
-              if (an) stt.load()
+              if (an) void stt.load()
             }}
             label="Gesagtes auswerten"
             disabled={!options.record}
@@ -519,6 +611,20 @@ export default function RehearsalPanel({
               pro Zeile. Danach kommt alles aus dem Zwischenspeicher. „Vorbereiten“ erledigt das
               vorab, damit der Durchlauf ohne Wartezeiten läuft.
             </Text>
+          )}
+
+          {/*
+            Ein gemerkter Auswerten-Schalter lädt erst beim Starten – dann muss
+            hier auch zu sehen sein, worauf der Knopf wartet.
+          */}
+          {stt.loading && (
+            <Stack gap={4}>
+              <Progress value={Math.round(stt.progress * 100)} animated />
+              <Text size="xs" c="dimmed">
+                Spracherkennung wird geladen … {Math.round(stt.progress * 100)} % (beim ersten Mal
+                rund 200 MB)
+              </Text>
+            </Stack>
           )}
 
           <Group>

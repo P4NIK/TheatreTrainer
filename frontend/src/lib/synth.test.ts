@@ -242,7 +242,7 @@ describe('runSynthesis', () => {
 
     const gap = Math.trunc((SAMPLE_RATE * GAP_MS) / 1000)
     expect(out.samples.length).toBe(2 * (RATE + gap))
-    expect(out.stats).toEqual({ rendered: 2, cached: 0, skippedRole: 0, fixedPauses: 0 })
+    expect(out.stats).toEqual({ rendered: 2, cached: 0, skippedRole: 0, fixedPauses: 0, failed: 0 })
     expect(out.problems).toEqual([])
     // Der WAV-Kopf sind 44 Bytes, danach zwei je Sample.
     expect(out.wav.byteLength).toBe(44 + out.samples.length * 2)

@@ -29,12 +29,15 @@ import {
   type LayoutProfile,
 } from '../../lib/detect'
 import { piecesForPages, type TextPiece } from '../../lib/pdfText'
+import { bool, oneOf, pick, projectKey, usePrefs } from '../../lib/prefs'
 import { pdfjs } from '../../lib/pdfWorker'
 import type { Block } from '../../types'
 
 interface Props {
   opened: boolean
   onClose: () => void
+  /** Für die gemerkten Einstellungen: Der Aufbau gehört zu diesem Textbuch. */
+  projectId: string
   /** URL of the PDF. The dialog opens its own copy of the document – see below. */
   fileUrl: string
   currentPage: number
@@ -71,14 +74,26 @@ function spread(current: number, total: number): number[] {
 export default function AutoDetectModal({
   opened,
   onClose,
+  projectId,
   fileUrl,
   currentPage,
   existing,
   onApply,
 }: Props) {
-  const [range, setRange] = useState<Range>('rest')
-  const [inline, setInline] = useState<InlineDirections>('strip')
-  const [skipFrontMatter, setSkipFrontMatter] = useState(true)
+  /*
+   * Wie ein Textbuch gebaut ist, ändert sich nicht zwischen zwei
+   * Durchsuchungen: Wer einmal „alle Seiten“ und „Einschübe als eigene
+   * Blöcke“ gewählt hat, will das beim Nachfassen wieder.
+   */
+  const [wahl, setWahl] = usePrefs(projectKey(projectId, 'erkennen'), (raw) => ({
+    range: oneOf(pick(raw, 'range'), ['page', 'rest', 'all'] as const, 'rest'),
+    inline: oneOf(pick(raw, 'inline'), ['strip', 'split', 'keep'] as const, 'strip'),
+    skipFrontMatter: bool(pick(raw, 'skipFrontMatter'), true),
+  }))
+  const { range, inline, skipFrontMatter } = wahl
+  const setRange = (was: Range) => setWahl((w) => ({ ...w, range: was }))
+  const setInline = (was: InlineDirections) => setWahl((w) => ({ ...w, inline: was }))
+  const setSkipFrontMatter = (an: boolean) => setWahl((w) => ({ ...w, skipFrontMatter: an }))
   const [profile, setProfile] = useState<LayoutProfile | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)

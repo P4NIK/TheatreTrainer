@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { encodeWav, resample } from '../../lib/audio'
 import { engineFor } from '../../lib/engine'
 import { requestFor } from '../../lib/pipeline'
+import { auffaellig, log, probe } from '../../lib/protokoll'
 import { SAMPLE_RATE } from '../../lib/synth'
 import type { Block, Project, Speakers } from '../../types'
 
@@ -76,7 +77,24 @@ export function useBlockAudio(
         })
         if (!ok || !request) throw new Error('Für diesen Block ist keine Stimme konfiguriert')
 
-        const rendered = await engineFor(current.project.id).render(request)
+        /*
+         * Auch hier gilt: Wenn ein Block nicht will, muss hinterher jemand
+         * wissen, welcher. Im Lernmodus fällt das sonst nur als ein Kasten
+         * „konnte nicht erzeugt werden“ auf, ohne Text und ohne Seite.
+         */
+        let rendered
+        try {
+          rendered = await engineFor(current.project.id).render(request)
+        } catch (error) {
+          const grund = error instanceof Error ? error.message : String(error)
+          const seltsam = auffaellig(request.text)
+          log(
+            `Einzelblock gescheitert · ${block.speaker || 'Regie'} · S. ${block.page} · ${blockId} · ` +
+              `${request.text.length} Zeichen · „${probe(request.text)}“` +
+              `${seltsam ? ` · Sonderzeichen: ${seltsam}` : ''} · ${grund}`,
+          )
+          throw error
+        }
         const samples = resample(rendered.samples, rendered.sampleRate, SAMPLE_RATE)
         const url = URL.createObjectURL(
           new Blob([encodeWav(samples, SAMPLE_RATE)], { type: 'audio/wav' }),

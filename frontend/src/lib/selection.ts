@@ -8,6 +8,7 @@
  * list of blocks, plus optional spoken markers where something was left out,
  * so it stays clear where in the play you are.
  */
+import { bool, num, oneOf, pick, strings } from './prefs'
 import type { Block, Project, RunSelection, SelectionItem, SelectionMode } from '../types'
 
 export type { SelectionItem, SelectionMode }
@@ -48,6 +49,35 @@ export const defaultSelection: SelectionSettings = {
   mergeGap: 3,
   blockIds: [],
   announce: true,
+}
+
+/**
+ * Eine gemerkte Auswahl zurücklesen.
+ *
+ * Die Seitenzahlen kommen aus einem Stück, das seitdem gekürzt worden sein
+ * kann; sie werden auf das begrenzt, was es gibt. Auch die Rolle kann
+ * verschwunden sein – dann ist „meine Auftritte“ nicht mehr die Auswahl von
+ * jemandem, sondern von niemandem, und es gilt wieder das ganze Stück.
+ */
+export function readSelection(
+  raw: unknown,
+  pageCount: number,
+  hasRole: boolean,
+  fallback: SelectionSettings = defaultSelection,
+): SelectionSettings {
+  const seiten = Math.max(1, pageCount)
+  const mode = oneOf(pick(raw, 'mode'), ['all', 'pages', 'role', 'blocks'] as const, fallback.mode)
+  const fromPage = num(pick(raw, 'fromPage'), fallback.fromPage, 1, seiten)
+  return {
+    mode: mode === 'role' && !hasRole ? 'all' : mode,
+    fromPage,
+    toPage: Math.max(fromPage, num(pick(raw, 'toPage'), Math.max(fallback.toPage, seiten), 1, seiten)),
+    lead: num(pick(raw, 'lead'), fallback.lead, 0, 20),
+    trail: num(pick(raw, 'trail'), fallback.trail, 0, 20),
+    mergeGap: num(pick(raw, 'mergeGap'), fallback.mergeGap, 0, 50),
+    blockIds: strings(pick(raw, 'blockIds'), fallback.blockIds),
+    announce: bool(pick(raw, 'announce'), fallback.announce),
+  }
 }
 
 function ordered(blocks: Block[]): Block[] {

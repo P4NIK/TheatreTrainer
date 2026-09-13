@@ -16,6 +16,7 @@
  */
 
 import type { RenderedBlock, SynthRequest } from './pipeline'
+import { log } from './protokoll'
 import { BlockCache, ModelStore, opfsStore, type BlobSink, type DownloadProgress } from './storage'
 import { cachedRenderer, PiperPool } from './synth'
 
@@ -61,6 +62,10 @@ export function engineFor(projectId: string): Engine {
     onVoiceProgress: (voice, progress) => {
       for (const listener of listeners) listener({ voice, ...progress })
     },
+    // Zurufe aus dem Sprach-Worker – Auffrischungen des Phonemisierers,
+    // Ausgaben von espeak-ng, ein gestorbener Worker. Sie stehen im
+    // Protokoll neben den Blöcken, zu denen sie gehören.
+    onNote: (n) => log(`Phonemisierer (${n.kind}): ${n.text}`),
   })
 
   const engine: Engine = {

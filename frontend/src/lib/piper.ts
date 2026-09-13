@@ -81,6 +81,42 @@ let phonemizer: PhonemizeModule | null = null
 let phonemizerLoading: Promise<PhonemizeModule> | null = null
 let printed: string[] = []
 
+/*
+ * Warum der Phonemisierer regelmäßig weggeworfen wird.
+ *
+ * `callMain` ruft in WASM ein `main()` auf, das nie dafür gebaut wurde, ein
+ * zweites Mal zu laufen: espeak-ng richtet sich bei jedem Aufruf neu ein und
+ * räumt dabei nicht alles weg. Eine Weile geht das gut, dann nicht mehr –
+ * gemessen im selben Chromium, mit dem hier gearbeitet wird:
+ *
+ *   ein Satz je Aufruf    → tot nach 120 Aufrufen
+ *   fünf Sätze je Aufruf  → tot nach  49 Aufrufen
+ *
+ * „Tot“ heißt: `Aborted()`, „memory access out of bounds“ oder „null function
+ * or function signature mismatch“ – was davon kommt, ist Zufall, und danach
+ * ist das Modul für immer hin. Genau das hat einen Lauf über 1854 Blöcke nach
+ * 109 erzeugten Blöcken umgebracht.
+ *
+ * Der Verbrauch hängt an beidem, an Aufrufen und an Sätzen (grob 1,8 : 1),
+ * und das Budget lag bei rund 330 solcher Einheiten. Die Grenzen hier liegen
+ * bei etwa einem Drittel davon; ein frisches Modul kostet 35 ms, bei 1854
+ * Blöcken also drei Sekunden auf eine dreiviertel Stunde Arbeit.
+ */
+const MAX_CALLS = 20
+const MAX_SENTENCES = 50
+
+let calls = 0
+let sentencesDone = 0
+let callsTotal = 0
+
+/** Was beim Phonemisieren vorgefallen ist – landet im Protokoll. */
+export type Note = { kind: 'espeak' | 'frisch' | 'wiederholt'; text: string }
+let note: (note: Note) => void = () => undefined
+
+export function onNote(listener: (note: Note) => void): void {
+  note = listener
+}
+
 /**
  * espeak-ng as WASM. The module can be used more than once – a second call
  * then costs five milliseconds instead of the 18 MB all over again.
@@ -94,12 +130,24 @@ async function getPhonemizer(): Promise<PhonemizeModule> {
     const factory = (module.default ?? module) as PhonemizeFactory
     phonemizer = await factory({
       print: (line) => printed.push(line),
-      printErr: (line) => console.warn('espeak-ng:', line),
+      printErr: (line) => {
+        console.warn('espeak-ng:', line)
+        note({ kind: 'espeak', text: line })
+      },
       locateFile: (file) => `${wasmBase}${file}`,
     })
     return phonemizer
   })()
   return phonemizerLoading
+}
+
+/** Das Modul aufgeben. Das nächste Phonemisieren baut ein frisches auf. */
+function retire(reason: string): void {
+  phonemizer = null
+  phonemizerLoading = null
+  calls = 0
+  sentencesDone = 0
+  note({ kind: 'frisch', text: reason })
 }
 
 interface PhonemeLine {
@@ -111,12 +159,59 @@ interface PhonemeLine {
 /** Calls espeak-ng once for all sentences; it prints one line per sentence. */
 function phonemize(module: PhonemizeModule, sentences: string[], espeakVoice: string): PhonemeLine[] {
   printed = []
+  calls++
+  callsTotal++
+  sentencesDone += sentences.length
   module.callMain([
     '-l', espeakVoice,
     '--input', JSON.stringify(sentences.map((text) => ({ text }))),
     '--espeak_data', '/espeak-ng-data',
   ])
+  /*
+   * Ein Satz, eine Zeile. Kommen weniger zurück, ist das Modul angeschlagen –
+   * und das ist die gefährlichere Hälfte des Problems: Ein Abbruch fällt auf,
+   * eine stillschweigend verschluckte Zeile wäre eine Aufnahme, in der ein
+   * halber Satz fehlt.
+   */
+  if (printed.length !== sentences.length) {
+    throw new Error(
+      `espeak-ng gab ${printed.length} statt ${sentences.length} Zeilen zurück`,
+    )
+  }
   return printed.map((line) => JSON.parse(line) as PhonemeLine)
+}
+
+/**
+ * Phonemisieren, mit Auffrischung davor und Fangnetz dahinter.
+ *
+ * Vorher: Ist das Budget aufgebraucht, kommt ein frisches Modul, bevor etwas
+ * passiert. Nachher: Geht es trotzdem schief, wird das Modul weggeworfen und
+ * genau einmal wiederholt – dann steht fest, ob es am Modul lag oder am Text.
+ */
+async function phonemizeSafely(sentences: string[], espeakVoice: string): Promise<PhonemeLine[]> {
+  if (calls >= MAX_CALLS || sentencesDone >= MAX_SENTENCES) {
+    retire(`planmäßig nach ${calls} Aufrufen und ${sentencesDone} Sätzen`)
+  }
+
+  try {
+    return phonemize(await getPhonemizer(), sentences, espeakVoice)
+  } catch (error) {
+    const grund = error instanceof Error ? error.message : String(error)
+    /*
+     * Genau diese Zahlen haben beim letzten Mal gefehlt: Ein Fehler „nach 104
+     * Aufrufen“ heißt etwas völlig anderes als einer beim ersten Satz – dort
+     * wäre der Text schuld, hier war es das Modul.
+     */
+    note({
+      kind: 'wiederholt',
+      text:
+        `${grund} – nach ${calls} Aufrufen und ${sentencesDone} Sätzen mit diesem Modul ` +
+        `(${callsTotal} insgesamt), ${sentences.length} Sätze in diesem Block; ` +
+        'zweiter Versuch mit frischem Phonemisierer',
+    })
+    retire(`nach Fehler: ${grund}`)
+    return phonemize(await getPhonemizer(), sentences, espeakVoice)
+  }
 }
 
 /**
@@ -225,7 +320,6 @@ export async function loadVoice(model: ArrayBuffer | Uint8Array, config: VoiceCo
     config,
 
     async synthesize(text, options = {}) {
-      const module = await getPhonemizer()
       const sentences = splitSentences(text)
       if (sentences.length === 0) {
         return { samples: new Int16Array(0), sampleRate: config.audio.sample_rate,
@@ -233,7 +327,7 @@ export async function loadVoice(model: ArrayBuffer | Uint8Array, config: VoiceCo
       }
 
       const startedPhonemize = performance.now()
-      const lines = phonemize(module, sentences, config.espeak.voice)
+      const lines = await phonemizeSafely(sentences, config.espeak.voice)
       const phonemizeMs = performance.now() - startedPhonemize
 
       const noiseScale = options.noiseScale ?? config.inference.noise_scale

@@ -43,6 +43,7 @@ import { contextBefore, upcomingBlockIDs, type Step } from '../../lib/rehearsal'
 import { stt } from '../../lib/stt'
 import type { Grade } from '../../types'
 import ComparisonView from './ComparisonView'
+import type { RunOptions } from './runOptions'
 import type { BlockAudio } from './useBlockAudio'
 import { useRecorder, type Take } from './useRecorder'
 
@@ -59,18 +60,6 @@ export interface DoneScreen {
   summary: string
   /** Left out, the "once more" button disappears with it. */
   repeatLabel?: string
-}
-
-export interface RunOptions {
-  /** Read along with what the others say. */
-  showText: boolean
-  /** Show your own line already during the pause instead of only afterwards. */
-  revealOwn: boolean
-  /** Seconds after which the pause ends by itself; null means you click. */
-  autoAdvance: number | null
-  record: boolean
-  /** Send the take to the local speech recognition and compare it. */
-  analyze: boolean
 }
 
 interface Props {

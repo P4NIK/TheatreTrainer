@@ -8,6 +8,16 @@ import '@mantine/notifications/styles.css'
 import './index.css'
 
 import App from './App'
+import Fehlerfang from './components/Fehlerfang/Fehlerfang'
+import { defuseCrashes } from './lib/prefs'
+
+/*
+ * Vor dem ersten Bild: Was lief noch, als die Seite das letzte Mal endete,
+ * ohne sich abzumelden? Das war ein Absturz – der Schalter dazu wird
+ * ausgeschaltet, bevor irgendeine Ansicht ihn lesen kann. Später wäre es zu
+ * spät: Die Reiter lesen ihre Einstellungen beim Aufbau.
+ */
+defuseCrashes()
 
 const theme = createTheme({
   primaryColor: 'indigo',
@@ -34,7 +44,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-right" />
-      <App />
+      {/* Das letzte Netz: Was kein Reiter abfängt, endet wenigstens als
+          Meldung und nicht als weiße Seite. */}
+      <Fehlerfang name="Die Seite">
+        <App />
+      </Fehlerfang>
     </MantineProvider>
   </StrictMode>,
 )

@@ -45,9 +45,29 @@ import {
   sessionQueue,
   type DeckFilter,
 } from '../../lib/cards'
+import { log } from '../../lib/protokoll'
 import { upcomingBlockIDs, type Step } from '../../lib/rehearsal'
 import { store } from '../../lib/store'
-import { buildSelection, defaultSelection, type SelectionSettings } from '../../lib/selection'
+import {
+  bool,
+  globalKey,
+  num,
+  numOrNull,
+  oneOf,
+  pick,
+  projectKey,
+  str,
+  usePrefs,
+  useRisk,
+  wasDefused,
+  forgetDefused,
+} from '../../lib/prefs'
+import {
+  buildSelection,
+  defaultSelection,
+  readSelection,
+  type SelectionSettings,
+} from '../../lib/selection'
 import {
   DIRECTION_KEY,
   type Block,
@@ -59,9 +79,15 @@ import {
   type Speakers,
 } from '../../types'
 import SelectionCard from '../SynthesizePanel/SelectionCard'
-import RehearsalRun, { type RunOptions } from './RehearsalRun'
+import RehearsalRun from './RehearsalRun'
+import { readRunOptions, type RunOptions } from './runOptions'
 import { useBlockAudio } from './useBlockAudio'
 import { sttHint, useStt } from './useStt'
+
+/** „Diese Sitzung“ – dieselbe Gewohnheit für jedes Stück. */
+const SITZUNG_KEY = globalKey('karten')
+/** Der Schalter, der die Seite umbringen kann. */
+const AUSWERTEN = { pref: SITZUNG_KEY, field: 'analyze' }
 
 /** One colour per Leitner box, from "just started" to "sits". */
 const BOX_COLORS = ['red', 'orange', 'yellow', 'lime', 'teal', 'green']
@@ -94,22 +120,55 @@ export default function CardsPanel({
   onBeforeStart,
   onPremiereChange,
 }: Props) {
-  const [role, setRole] = useState(project.myRole)
-  const [selection, setSelection] = useState<SelectionSettings>({
-    ...defaultSelection,
-    toPage: Math.max(1, project.pageCount),
+  /* Rolle und Ausschnitt gehören zu diesem Stück. */
+  const [stueck, setStueck] = usePrefs(projectKey(project.id, 'karten'), (raw) => {
+    const role = str(pick(raw, 'role'), project.myRole)
+    return {
+      role,
+      selection: readSelection(pick(raw, 'selection'), project.pageCount, role !== '', {
+        ...defaultSelection,
+        toPage: Math.max(1, project.pageCount),
+      }),
+    }
   })
-  const [filter, setFilter] = useState<DeckFilter>('due')
-  const [limit, setLimit] = useState<number | null>(20)
-  const [cueCount, setCueCount] = useState(1)
-  const [includeDirections, setIncludeDirections] = useState(true)
-  const [options, setOptions] = useState<RunOptions>({
-    showText: true,
-    revealOwn: false,
-    autoAdvance: null,
-    record: false,
-    analyze: false,
-  })
+  const { role, selection } = stueck
+  const setRole = useCallback((wer: string) => setStueck((s) => ({ ...s, role: wer })), [setStueck])
+  const setSelection = useCallback(
+    (next: SelectionSettings) => setStueck((s) => ({ ...s, selection: next })),
+    [setStueck],
+  )
+
+  /*
+   * Wie eine Sitzung aussehen soll, gehört zur Person: nur Fälliges oder
+   * alles, wie viele Karten, wie viel Stichwort – und die Schalter des
+   * Durchlaufs, die im Lernmodus dieselben sind.
+   */
+  const [sitzung, setSitzung] = usePrefs(SITZUNG_KEY, (raw) => ({
+    filter: oneOf(pick(raw, 'filter'), ['due', 'all'] as const, 'due'),
+    limit: numOrNull(pick(raw, 'limit'), 20, 1, 500),
+    cueCount: num(pick(raw, 'cueCount'), 1, 0, 3),
+    includeDirections: bool(pick(raw, 'includeDirections'), true),
+    ...readRunOptions(raw),
+  }))
+  const { filter, limit, cueCount, includeDirections } = sitzung
+  const options = useMemo<RunOptions>(
+    () => ({
+      showText: sitzung.showText,
+      revealOwn: sitzung.revealOwn,
+      autoAdvance: sitzung.autoAdvance,
+      record: sitzung.record,
+      analyze: sitzung.analyze,
+    }),
+    [sitzung],
+  )
+  const setFilter = (was: DeckFilter) => setSitzung((s) => ({ ...s, filter: was }))
+  const setLimit = (wie: number | null) => setSitzung((s) => ({ ...s, limit: wie }))
+  const setCueCount = (wie: number) => setSitzung((s) => ({ ...s, cueCount: wie }))
+  const setIncludeDirections = (an: boolean) => setSitzung((s) => ({ ...s, includeDirections: an }))
+
+  /* Dieselbe Zündschnur wie im Lernmodus, an ihrem eigenen Schalter. */
+  useRisk(AUSWERTEN, sitzung.analyze)
+  const [abgestuerzt, setAbgestuerzt] = useState(() => wasDefused(AUSWERTEN))
 
   const [cards, setCards] = useState<Deck>({})
   const [loading, setLoading] = useState(true)
@@ -168,7 +227,7 @@ export default function CardsPanel({
   )
 
   const set = <K extends keyof RunOptions>(key: K, value: RunOptions[K]) =>
-    setOptions((o) => ({ ...o, [key]: value }))
+    setSitzung((s) => ({ ...s, [key]: value }))
 
   const missing = useMemo(() => {
     const need = new Set<string>()
@@ -221,6 +280,13 @@ export default function CardsPanel({
     setStarting(true)
     try {
       await onBeforeStart()
+      log(
+        `Karteikarten gestartet: ${queue.length} Karten, Stichwort ${cueCount}, ` +
+          `Rolle „${role || 'keine'}“, Stück „${project.name}“`,
+      )
+      // Ein gemerkter Schalter lädt nichts beim Öffnen des Reiters – die
+      // 200 MB kommen erst, wenn wirklich eine Sitzung beginnt.
+      if (options.analyze && !stt.ready) await stt.load()
       setSteps(planned)
       setTally(NO_GRADES)
       setRunning(true)
@@ -463,18 +529,33 @@ export default function CardsPanel({
             checked={options.record}
             onChange={(e) => {
               const on = e.currentTarget.checked
-              setOptions((o) => ({ ...o, record: on, analyze: on && o.analyze }))
+              setSitzung((s) => ({ ...s, record: on, analyze: on && s.analyze }))
             }}
             label="Mitschneiden, was ich sage"
             description="Die Aufnahme bleibt im Browser und lässt sich vor der Bewertung anhören."
           />
+          {abgestuerzt && (
+            <Alert
+              color="orange"
+              icon={<IconAlertTriangle size={18} />}
+              withCloseButton
+              onClose={() => {
+                forgetDefused(AUSWERTEN)
+                setAbgestuerzt(false)
+              }}
+            >
+              Beim letzten Mal hat die Seite das Auswerten nicht überlebt – deshalb ist der
+              Schalter jetzt aus. Einschalten geht wieder; eine Sitzung läuft auch ohne
+              Auswertung.
+            </Alert>
+          )}
           <Switch
             checked={options.analyze}
             onChange={(e) => {
               const an = e.currentTarget.checked
               set('analyze', an)
               // Lieber jetzt laden, mit Fortschritt, als bei der ersten Replik.
-              if (an) stt.load()
+              if (an) void stt.load()
             }}
             label="Gesagtes auswerten"
             disabled={!options.record}
@@ -523,6 +604,17 @@ export default function CardsPanel({
               wird eine lange Sitzung von selbst zur Wiederholung. „Vorbereiten“ erzeugt vorab
               alle Stichworte und Repliken, damit nichts stockt.
             </Text>
+          )}
+
+          {/* Was der Startknopf gerade nachlädt, siehe Lernmodus. */}
+          {stt.loading && (
+            <Stack gap={4}>
+              <Progress value={Math.round(stt.progress * 100)} animated />
+              <Text size="xs" c="dimmed">
+                Spracherkennung wird geladen … {Math.round(stt.progress * 100)} % (beim ersten Mal
+                rund 200 MB)
+              </Text>
+            </Stack>
           )}
 
           <Group>

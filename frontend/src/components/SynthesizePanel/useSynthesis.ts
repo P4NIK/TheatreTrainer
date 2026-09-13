@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { engineFor } from '../../lib/engine'
 import { planRun } from '../../lib/pipeline'
+import { flush, log } from '../../lib/protokoll'
 import { requestPersistence } from '../../lib/storage'
 import { runSynthesis, tidyCache } from '../../lib/synth'
 import { VOICES } from '../../lib/voices'
@@ -134,6 +135,13 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
 
       try {
         const plan = planRun(input)
+        log(
+          `Hörfassung gestartet: ${plan.items.length} Blöcke von ${blocks.length}` +
+            `${options.selection ? ' (Auswahl)' : ' (ganzes Stück)'}` +
+            `${options.skipMyRole ? ', eigene Rolle ausgespart' : ''}` +
+            `${options.includeDirections ? ', mit Regieanweisungen' : ', ohne Regieanweisungen'}` +
+            `, Stück „${project.name}“`,
+        )
         if (plan.items.length === 0) {
           setState({ ...IDLE, status: 'error', error: 'Die Auswahl enthält keine Blöcke zum Vorlesen.', problems: plan.problems })
           return
@@ -191,11 +199,27 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
           }))
         }
 
+        /*
+         * Das Protokoll bekommt nicht jeden Block, sondern jeden
+         * fünfundzwanzigsten – und jeden, der schiefgeht (den schreibt
+         * renderPlan selbst). So bleibt eine dreiviertel Stunde Arbeit auf
+         * achtzig Zeilen lesbar.
+         */
         const out = await runSynthesis(input, engine.render, {
           signal: controller.signal,
-          onProgress: melde,
+          onProgress: (p) => {
+            melde(p)
+            if (p.done % 25 === 0 || p.done === p.total) {
+              log(`${p.done}/${p.total} · ${p.rendered} neu · ${p.cached} aus dem Speicher`)
+            }
+          },
+          note: log,
           sink: sink ?? undefined,
         })
+
+        log(`Hörfassung fertig: ${out.message}`)
+        if (out.problems.length > 0) log(`Mängel: ${out.problems.slice(0, 10).join(' | ')}`)
+        flush()
 
         url.current = URL.createObjectURL(out.file)
         setState({
@@ -216,6 +240,12 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
         await tidyCache(engine.cache, project, blocks, speakers).catch(() => 0)
       } catch (error) {
         const aborted = error instanceof DOMException && error.name === 'AbortError'
+        log(
+          aborted
+            ? 'Hörfassung abgebrochen'
+            : `Hörfassung fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        flush()
         setState((s) => ({
           ...s,
           status: 'error',

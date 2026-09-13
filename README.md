@@ -132,6 +132,39 @@ abgedunkelten Bild ist ein Kästchen mit sehr großem Schatten.
 6. **Lernmodus** – Rolle und Ausschnitt wählen, „Probe starten“, und der
    Rechner spielt dir die Szene vor, bis du dran bist (siehe unten).
 
+### Was die Reiter behalten
+
+Die Schalter sind Gewohnheit, nicht Zustand: Wer Regieanweisungen nicht hören
+will, will sie morgen auch nicht hören. Also merkt sich jeder Reiter, wie er
+gestellt war – im localStorage, in zwei Schubladen:
+
+| Schublade | Schlüssel | Was darin liegt |
+| --- | --- | --- |
+| zur Person | `theater-opt/<reiter>` | mitlesen, aufdecken, mitschneiden, auswerten, Pausenlänge, Regieanweisungen, „nur Fälliges“, Kartenzahl, Stichwort |
+| zum Stück | `theater-opt/<stück>/<reiter>` | Rolle, Ausschnitt, Aufbau des Textbuchs für das Erkennen, Blocklistenfilter |
+
+Die Trennung hat einen Grund: Eine Seitenzahl aus einem anderen Buch wäre
+Unsinn, eine Gewohnheit dagegen gilt auch für das nächste Stück. Zurückgelesen
+wird nie blind – jeder Wert geht durch einen Prüfer (`lib/prefs.ts`), und eine
+gemerkte Auswahl „Seite 40–59“ schrumpft mit, wenn das Stück auf zwölf Seiten
+gekürzt wurde. In der Technik-Prüfung wirft *Einstellungen vergessen* alles
+weg.
+
+Zwei Schalter sind Wagnisse, weil sie erst etwas herunterladen müssen:
+
+- **Geladen wird beim Starten, nicht beim Öffnen.** Ein gemerktes „Gesagtes
+  auswerten“ holt die 200 MB nicht beim Aufschlagen des Reiters, sondern erst
+  bei „Probe starten“ – mit Fortschrittsbalken daneben, statt mit Stille bei
+  der ersten Replik.
+- **Eine Zündschnur gegen die Wiederholung.** Solange so ein Schalter an und
+  sein Reiter offen ist, liegt eine Marke in `theater-wagnis`. Beim Ausschalten,
+  beim Reiterwechsel und bei einem `pagehide` – das auch beim Schließen und
+  Wegwischen kommt – wird sie gelöscht. Brennt sie beim nächsten Start noch,
+  hat die Seite es nicht überlebt: Dann geht genau dieser Schalter aus, bevor
+  irgendeine Ansicht ihn zu sehen bekommt, und der Reiter sagt, warum. Ohne das
+  käme die Seite in dem Zustand zurück, der sie umgebracht hat – und wieder,
+  und wieder.
+
 ### Blöcke automatisch erkennen
 
 Ein Theaterstück ist in Spalten gesetzt: Sprechername und Regieanweisungen am
@@ -356,7 +389,9 @@ Fünf Zustände, farbig: *sitzt*, *fast*, *anders gesagt*, *nicht gehört*,
 hat – damit nachvollziehbar bleibt, wer sich verhört hat.
 
 Erkannt wird mit **Whisper (`base`)**, das beim ersten Einschalten einmal
-geladen wird (rund 200 MB) und danach im Browser bleibt. Eine Replik dauert
+geladen wird (rund 200 MB) und danach im Browser bleibt. Der Schalter wird
+gemerkt, das Laden aber nicht vorgezogen – und übersteht die Seite es nicht,
+ist er beim nächsten Start wieder aus (siehe *Was die Reiter behalten*). Eine Replik dauert
 etwa eine Sekunde – und das reicht, weil die Erkennung läuft, während die
 Auflösung abgespielt wird.
 
@@ -544,6 +579,61 @@ aufgelöst: `"./"` heißt dort `https://p4nik.github.io/`, und genau die landete
 dann auf dem Home-Bildschirm. Es gibt hier deshalb kein `id` – ohne die Angabe
 gilt `start_url`, und das ist die richtige Adresse.
 
+### Das Protokoll des letzten Laufs
+
+Anlass war ein Fehlerbericht, mit dem niemand etwas anfangen konnte:
+`espeak-ng: Aborted()`, `339/1854 – 109 neu`, `Synthese fehlgeschlagen`. Darin
+fehlte alles, was die Ursache verraten hätte – welcher Block, welcher Text, und
+vor allem: der wievielte Aufruf des Phonemisierers das war. Genau diese Zahl
+war die Antwort.
+
+Deshalb schreibt jeder Lauf jetzt mit (`lib/protokoll.ts`), und zwar wenige,
+aber die richtigen Zeilen:
+
+- der Anfang mit Umfang, Auswahl, Schaltern und Stück
+- jeder 25. Block mit „neu“ und „aus dem Zwischenspeicher“
+- jede Auffrischung des Phonemisierers, mit Aufrufen und Sätzen
+- jeder gescheiterte Block: Nummer, Sprecher, Seite, Kennung, Länge, Textprobe,
+  auffällige Zeichen (`U+00A0` und Verwandte, die man einem Text nicht ansieht)
+  und der Fehler im Wortlaut
+- das Ende mit der Zusammenfassung
+
+Das Ganze liegt als Ringpuffer (300 Zeilen) im `localStorage`, überlebt also
+einen Absturz, steht in der Technik-Prüfung unter *Letzter Lauf* zum Kopieren
+und hängt unten am Bericht. Geschrieben wird gesammelt, höchstens einmal pro
+Sekunde – bei einem Absturz fehlt damit höchstens die letzte Sekunde.
+
+### Wenn eine Ansicht abstürzt
+
+Ein Fehler beim Zeichnen wirft in React die ganze Oberfläche weg – zurück
+bleibt ein weißes Fenster, und der Grund steht nur in der Entwicklerkonsole,
+die auf einem Telefon niemand öffnet. Deshalb hängt um jeden Reiter ein
+Fangnetz (`components/Fehlerfang`): Der Fehler geht ins Protokoll und damit in
+den Bericht, an der Stelle der Ansicht steht eine Meldung mit dem Wortlaut,
+und *Noch einmal versuchen* baut nur diese eine Ansicht neu auf. Die übrigen
+Reiter laufen weiter.
+
+Ein Beispiel aus der Praxis, das genau so gefunden wurde:
+
+```tsx
+// falsch – läuft später, dann ist currentTarget null
+onChange={(e) => setSchalter((s) => ({ ...s, includeDirections: e.currentTarget.checked }))}
+
+// richtig – erst den Wert holen, dann den Zustand ändern
+onChange={(e) => {
+  const an = e.currentTarget.checked
+  setSchalter((s) => ({ ...s, includeDirections: an }))
+}}
+```
+
+Tückisch daran: In der gebauten Fassung fällt das oft nicht auf, weil React die
+Funktion meist sofort auswertet, solange das Ereignis noch gilt. Im Dev-Server
+mit `StrictMode` ruft React sie absichtlich ein zweites Mal auf – beim
+Neuzeichnen, wenn `currentTarget` längst null ist. Die Prüfung
+`tools/schalter.mjs` legt deshalb **jeden Schalter jedes Reiters gegen
+den Dev-Server** um und prüft, dass weder ein Fehler in der Konsole steht noch
+das Fangnetz zuschlägt.
+
 ### Technik-Prüfung
 
 Unter der Stückeliste steht *Läuft alles auf diesem Gerät?* (`#/technik`). Die
@@ -608,6 +698,24 @@ Tempo, nicht über die Stimme.
 Hörfassung im Arbeitsspeicher; seit sie laufend auf die Platte geschrieben wird
 (siehe oben), sollte es nicht mehr vorkommen. Die Technik-Prüfung sagt unter
 *Lange Aufnahmen*, ob dieser Browser das kann.
+
+**„Synthese fehlgeschlagen: Aborted()“ mitten in einem langen Stück** – das war
+espeak-ng, und der Grund ist eine Eigenheit des WASM-Moduls: `callMain` ruft
+ein `main()` auf, das nie dafür gebaut wurde, hundertmal zu laufen. Jeder
+Aufruf lässt etwas liegen; nach ungefähr 330 „Einheiten“ (ein Aufruf zählt wie
+1,8, ein Satz wie 1) ist Schluss, und dann kommt `Aborted()`, „memory access
+out of bounds“ oder „null function or function signature mismatch“ – je nach
+Tageslaune, und danach ist das Modul endgültig hin. Gemessen in Chromium: tot
+nach 120 Aufrufen mit je einem Satz, nach 49 mit je fünf. Ein Bericht über
+1854 Blöcke starb bei Block 339, nach **109 neu erzeugten** – genau dort.
+
+Behoben in `lib/piper.ts`: Der Phonemisierer wird planmäßig nach 20 Aufrufen
+oder 50 Sätzen weggeworfen und neu aufgebaut (35 ms, bei 1854 Blöcken also
+drei Sekunden). Geht trotzdem etwas schief, wird einmal mit frischem Modul
+wiederholt; erst wenn auch das scheitert, liegt es wirklich am Text. Zusätzlich
+gilt jetzt: Ein Block, den Piper nicht erzeugen kann, kostet eine kurze Lücke
+und einen Eintrag in der Mängelliste – nicht den ganzen Lauf. Erst acht
+Fehlschläge hintereinander brechen ab.
 
 **Die Auswertung lädt und lädt** – das Whisper-Modell sind rund 200 MB. Bricht
 der Download ab, sagt es der Satz unter dem Schalter; ein zweiter Klick nimmt
