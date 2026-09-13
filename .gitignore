@@ -10,6 +10,13 @@ node_modules/
 frontend/dist/
 *.local
 
+# E2E: Spuren, Videos und Berichte der Playwright-Läufe – und die Stimme,
+# falls sie zum Prüfen neben die App gelegt wurde (63 MB gehören nicht ins
+# Repository).
+frontend/test-results/
+frontend/playwright-report/
+frontend/public/voice/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

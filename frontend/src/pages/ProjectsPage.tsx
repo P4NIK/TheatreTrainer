@@ -212,13 +212,25 @@ export default function ProjectsPage({ onOpen }: Props) {
                   <Button variant="light" onClick={() => onOpen(p.id)}>
                     Öffnen
                   </Button>
+                  {/* Mit Namen: Ein Symbolknopf ohne aria-label heißt für
+                      Vorleseprogramme „Schaltfläche“ – und ist auch für eine
+                      Prüfung nicht auffindbar. */}
                   <Tooltip label="Sicherungskopie speichern">
-                    <ActionIcon variant="subtle" onClick={() => save(p)}>
+                    <ActionIcon
+                      variant="subtle"
+                      onClick={() => save(p)}
+                      aria-label={`Sicherungskopie von ${p.name} speichern`}
+                    >
                       <IconDownload size={18} />
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label="Projekt löschen">
-                    <ActionIcon variant="subtle" color="red" onClick={() => remove(p)}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      onClick={() => remove(p)}
+                      aria-label={`${p.name} löschen`}
+                    >
                       <IconTrash size={18} />
                     </ActionIcon>
                   </Tooltip>

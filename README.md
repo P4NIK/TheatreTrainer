@@ -741,10 +741,20 @@ aufgeräumt hat oder woanders etwas klemmt, sagt die Technik-Prüfung.
 
 ```bash
 cd frontend
-npm test             # Vitest
+npm test             # Vitest: alles, was ohne Browser prüfbar ist
 npm run build        # Typprüfung und Build
 npm run lint
+
+npx playwright install chromium   # einmalig
+npm run e2e          # der ganze Weg, in der gebauten Fassung
+npm run e2e:dev      # dasselbe gegen den Dev-Server (StrictMode)
+npm run e2e:bericht  # den letzten Lauf im Browser ansehen
 ```
+
+`npm run e2e` baut vorher selbst und startet `vite preview`; ein Build von
+Hand ist nicht nötig. Bleibt es trotzdem bei
+`Timed out waiting … from config.webServer`, steht der Grund jetzt darüber –
+die Ausgabe des Servers läuft mit `[WebServer]` ins Protokoll.
 
 `npm test` prüft die automatische Blockerkennung – Sprechernamen, die als zwei
 Textstücke gesetzt sind, das Auftrennen eingeklammerter Einschübe,
@@ -755,6 +765,49 @@ Einzelauswahl und die Sprungmarken –, den Ablauf des Lernmodus, den
 Wortvergleich (Kölner Phonetik gegen die dokumentierten Beispiele, Levenshtein,
 Zahlwörter), die Audio-Bausteine (Resampling, Zeitdehnung, Tonhöhe), die
 Planung eines Durchlaufs samt Zwischenspeicher und die Ablage der Stücke.
+
+### Der ganze Weg: E2E
+
+`npm run e2e` fährt die App so, wie ein Mensch sie bedient: Stück anlegen, ein
+Rechteck über eine Textzeile ziehen, automatisch erkennen, eigene Rolle
+markieren, eine Hörfassung erzeugen, proben, eine Karteikarte bewerten,
+sichern, löschen, aus der Sicherungskopie zurückholen. Dazu zwei Prüfungen,
+die jeden Schalter umlegen, neu laden und nachsehen, ob er noch so steht – und
+eine, die jeden Knopf jeder Ansicht einmal drückt. Gefahren wird alles zweimal:
+als Telefon (iPhone-Maße, Finger) und als Rechner.
+
+**Das Textbuch dafür wird gebaut, nicht eingecheckt.** Theatertexte sind
+geschützt, auch die gekauften; ein PDF im Repository wäre weder erlaubt noch
+nötig. Stattdessen steht in `e2e/stueck.ts` ein Bauplan: ein paar Dutzend
+selbst geschriebene Sätze, daraus wird bei jedem Lauf ein PDF erzeugt – mit
+Titelseite, Personenverzeichnis, Akt- und Szenenzeilen, Kolumnentiteln,
+Seitenzahlen, eingeklammerten Einschüben und beiden Satzarten, die die App
+kennt (fette Namen mit Doppelpunkt; Namen in einer eigenen Spalte). Das PDF
+schreibt die Datei selbst, ohne Bibliothek.
+
+Der eigentliche Gewinn daran: **Wer das Stück baut, kennt die Wahrheit.** Die
+Prüfung vergleicht nicht „ungefähr genug Blöcke“, sondern die Zahlen, die
+hineingingen – 69 Repliken, 13 Regieanweisungen, je Rolle die Einsätze aus dem
+Personenverzeichnis, und die erste Replik samt ihrer Stelle auf der Seite, über
+die das Rechteck gezogen wird.
+
+Gefunden hat diese Prüfung am ersten Tag zwei Dinge:
+
+- **Alle Blöcke eines Absatzes trugen denselben Rahmen.** Bei einem Stück ohne
+  Leerzeile zwischen den Repliken ist ein Absatz die ganze Seite – also lagen
+  sämtliche Rahmen übereinander. Im Editor war kein einzelner Block mehr
+  anzuklicken, und ein von Hand markierter Block ließ „Automatisch erkennen“
+  dreizehn Repliken als „schon belegt“ überspringen. Jetzt bekommt jeder Block
+  den Rahmen seiner eigenen Zeilen (`segmentParagraph` in `lib/detect.ts`).
+- **Zwei Symbolknöpfe hatten keinen Namen** – „Sicherungskopie speichern“ und
+  „Projekt löschen“ waren für Vorleseprogramme (und für die Prüfung) namenlose
+  Schaltflächen. Jetzt tragen sie ein `aria-label`.
+
+Zwei Dinge lässt die E2E-Prüfung bewusst aus: den Schalter „Gesagtes
+auswerten“, weil er 200 MB Spracherkennung nachlädt, und das Warten auf einen
+ganzen Durchlauf – erzeugt wird eine Seite. Die Stimme kommt aus
+`../voices/de_DE-thorsten-medium.onnx`, falls sie dort liegt (oder aus
+`E2E_STIMME=…`); sonst holt die Prüfung sie wie die App von HuggingFace.
 
 Die Bausteine, die aus dem früheren Go-Backend portiert wurden, sind gegen ihr
 Vorbild geprüft worden: `tools/audio-parity` fuhr beide Fassungen der

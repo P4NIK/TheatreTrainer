@@ -375,12 +375,42 @@ describe('Stücke, die über den Schriftschnitt gegliedert sind', () => {
     expect(kurz(seite7)).toEqual(SEITE_7)
   })
 
-  it('gibt allen Blöcken eines Absatzes dasselbe Rechteck', () => {
+  /*
+   * Früher bekamen alle Blöcke eines Absatzes denselben Rahmen – den des
+   * ganzen Absatzes. Das rächte sich bei Stücken ohne Leerzeile zwischen den
+   * Repliken: Dort ist ein Absatz die ganze Seite, alle Rahmen lagen
+   * übereinander, im Editor war kein einzelner Block mehr anzuklicken, und
+   * ein von Hand markierter Block ließ „Automatisch erkennen“ die ganze Seite
+   * als belegt überspringen.
+   */
+  it('gibt jedem Block sein eigenes Rechteck', () => {
     const blocks = erkenne().blocks.filter((b) => b.page === 7)
     const absatz = blocks.filter((b) => b.text.startsWith('blickt mit finsterem') || b.text === 'Welche Nummer?' || b.text.startsWith('sieht dann wieder'))
     expect(absatz).toHaveLength(3)
-    for (const b of absatz) expect(b.rect).toEqual(absatz[0].rect)
-    // Und das Rechteck liegt da, wo der Absatz steht.
+
+    const verschieden = new Set(absatz.map((b) => JSON.stringify(b.rect)))
+    expect(verschieden.size).toBe(3)
+
+    /*
+     * Ein Rahmen deckt das, was zu ihm gehört: „Welche Nummer?“ steht auf
+     * einer Zeile und ist entsprechend flach. Eine kursive Stelle, die über
+     * den Zeilenumbruch läuft, darf zwei Zeilen hoch sein – nur eben nicht
+     * jeder Block so hoch wie alles zusammen.
+     */
+    const hoehen = absatz.map((b) => b.rect.h)
+    expect(Math.min(...hoehen)).toBeLessThan(0.03)
+    expect(new Set(hoehen).size).toBeGreaterThan(1)
+
+    // Und sie stehen in Leserichtung: gleiche Zeile weiter rechts, oder tiefer.
+    for (let i = 1; i < absatz.length; i++) {
+      const vorher = absatz[i - 1].rect
+      const jetzt = absatz[i].rect
+      const tiefer = jetzt.y > vorher.y + 0.005
+      const rechts = Math.abs(jetzt.y - vorher.y) <= 0.005 && jetzt.x > vorher.x
+      expect(tiefer || rechts, `${JSON.stringify(vorher)} → ${JSON.stringify(jetzt)}`).toBe(true)
+    }
+
+    // Und alles liegt da, wo der Absatz steht.
     expect(absatz[0].rect.y).toBeGreaterThan(0.4)
     expect(absatz[0].rect.y).toBeLessThan(0.46)
   })

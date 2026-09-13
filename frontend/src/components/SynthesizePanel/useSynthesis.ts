@@ -237,7 +237,8 @@ export function useSynthesis(project: Project, blocks: Block[], speakers: Speake
 
         // Same housekeeping as after a run in the backend: entries no block
         // points at any more are thrown away.
-        await tidyCache(engine.cache, project, blocks, speakers).catch(() => 0)
+        const weg = await tidyCache(engine.cache, project, blocks, speakers).catch(() => -1)
+        if (weg !== 0) log(`Zwischenspeicher aufgeräumt: ${weg} Einträge entfernt`)
       } catch (error) {
         const aborted = error instanceof DOMException && error.name === 'AbortError'
         log(

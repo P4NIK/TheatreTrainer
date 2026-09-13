@@ -477,15 +477,32 @@ function segmentParagraph(
   if (!rect) return speaker
 
   let buffer: TextPiece[] = []
+  /** Der fette Name samt Doppelpunkt – er gehört in den Rahmen seiner Replik. */
+  let kopf: TextPiece[] = []
 
-  const push = (type: BlockType, text: string) => {
+  /*
+   * Jeder Block bekommt seinen eigenen Rahmen.
+   *
+   * Vorher trugen alle Blöcke eines Absatzes denselben – den des ganzen
+   * Absatzes. Wo ein Absatz eine Replik ist, fällt das kaum auf; wo ein
+   * Absatz eine ganze Seite umfasst (Stücke ohne Leerzeile zwischen den
+   * Repliken), lagen sämtliche Rahmen der Seite übereinander. Sichtbar wurde
+   * es an zwei Stellen: Im Editor ließ sich kein einzelner Block mehr
+   * anklicken, und ein von Hand markierter Block galt beim nächsten
+   * „Automatisch erkennen“ als Beleg für die ganze Seite – dreizehn Repliken
+   * wurden übersprungen, weil eine markiert war. Gefunden hat das die
+   * E2E-Prüfung, die mit einem selbst gebauten Textbuch genau nachzählt.
+   */
+  const push = (type: BlockType, text: string, eigene: TextPiece[]) => {
     if (text === '') return
+    const mit = kopf.length > 0 ? [...kopf, ...eigene] : eigene
+    kopf = []
     out.push({
       page,
       type,
       speaker: type === 'line' ? speaker : null,
-      pieces,
-      rect,
+      pieces: mit.length > 0 ? mit : pieces,
+      rect: boundingBox(mit) ?? rect,
       textOverride: text,
     })
   }
@@ -503,7 +520,7 @@ function segmentParagraph(
 
     // „im Text lassen“ heißt: gar nicht erst trennen.
     if (!onlyDirection && options.inlineDirections === 'keep') {
-      push('line', piecesToText(buffer))
+      push('line', piecesToText(buffer), buffer)
       buffer = []
       return
     }
@@ -512,11 +529,11 @@ function segmentParagraph(
       const text = piecesToText(run.pieces)
       if (text === '') continue
       if (!run.italic) {
-        push('line', text)
+        push('line', text, run.pieces)
         continue
       }
       if (!onlyDirection && options.inlineDirections === 'strip') continue
-      for (const part of directionTexts(text)) push('direction', part)
+      for (const part of directionTexts(text)) push('direction', part, run.pieces)
     }
     buffer = []
   }
@@ -528,6 +545,7 @@ function segmentParagraph(
       flush()
       speaker = head.name
       cues.set(speaker, (cues.get(speaker) ?? 0) + 1)
+      kopf = pieces.slice(i, head.next)
       i = head.next
       // „Luzifer: Sie sind hier falsch.“ – der Rest steht im selben Stück.
       if (head.rest) {

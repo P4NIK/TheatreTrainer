@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -94,4 +95,10 @@ export default defineConfig({
   // Kein Proxy mehr: die Seite spricht mit keinem Server. Was sie lädt, kommt
   // aus dem eigenen Ordner oder direkt von HuggingFace.
   server: { port: 5173 },
+  /*
+   * `npm test` prüft, was ohne Browser prüfbar ist – die Dateien neben dem
+   * Quelltext. Was in e2e/ liegt, gehört Playwright und braucht einen
+   * laufenden Browser; Vitest würde daran nur scheitern.
+   */
+  test: { include: ['src/**/*.test.ts'] },
 })
