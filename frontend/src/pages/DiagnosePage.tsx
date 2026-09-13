@@ -65,6 +65,7 @@ import { ModelStore, opfsStore, requestPersistence, storageState } from '../lib/
 import { freeVoices } from '../lib/engine'
 import { precisionFor, stt, toMono16k, WHISPER_BYTES } from '../lib/stt'
 import { forgetPrefs } from '../lib/prefs'
+import { clearProtokoll, entries as protokollZeilen, protokollText } from '../lib/protokoll'
 import { forgetTours } from '../lib/tour'
 import { PiperPool } from '../lib/synth'
 import { VOICES } from '../lib/voices'
@@ -120,6 +121,7 @@ export default function DiagnosePage({ onBack }: Props) {
   const [extra, setExtra] = useState<Check[]>([])
   const [busy, setBusy] = useState(false)
   const [bericht, setBericht] = useState('')
+  const [protokoll, setProtokoll] = useState(() => protokollZeilen())
 
   // Mikrofon
   const [nimmtAuf, setNimmtAuf] = useState(false)
@@ -343,7 +345,7 @@ export default function DiagnosePage({ onBack }: Props) {
 
   const alle = [...(checks ?? []), ...extra]
   const kopieren = async () => {
-    const text = reportText(alle)
+    const text = reportText(alle, new Date(), protokollText(40))
     try {
       await navigator.clipboard.writeText(text)
       notifications.show({ color: 'green', message: 'Bericht kopiert.' })
@@ -477,6 +479,57 @@ export default function DiagnosePage({ onBack }: Props) {
           <Textarea value={bericht} readOnly autosize minRows={6} onFocus={(e) => e.currentTarget.select()} />
         )}
       </Stack>
+
+      {/*
+        Das Protokoll des letzten Laufs.
+        Es steht hier, weil diese Seite die ist, die weitergeschickt wird: Wer
+        „die Synthese bricht ab“ meldet, hat damit auch gleich die Zeilen
+        dabei, in denen steht, bei welchem Block und nach wie vielen Aufrufen
+        des Phonemisierers es passiert ist.
+      */}
+      <Card withBorder mt="lg" padding="md">
+        <Group justify="space-between" align="center" mb={4}>
+          <Text fw={600} size="sm">
+            Letzter Lauf
+          </Text>
+          {protokoll.length > 0 && (
+            <Button
+              variant="subtle"
+              color="gray"
+              size="compact-xs"
+              onClick={() => {
+                clearProtokoll()
+                setProtokoll([])
+              }}
+            >
+              leeren
+            </Button>
+          )}
+        </Group>
+        {protokoll.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            Noch nichts aufgezeichnet. Sobald eine Hörfassung erzeugt oder eine Probe gestartet
+            wird, stehen hier der Verlauf und – falls etwas schiefgeht – der Block, an dem es
+            hakte.
+          </Text>
+        ) : (
+          <>
+            <Text size="sm" c="dimmed" mb="xs">
+              {protokoll.length === 1 ? 'Eine Zeile' : `${protokoll.length} Zeilen`}, die neueste
+              unten. Der Knopf „Bericht kopieren“ nimmt die letzten vierzig mit.
+            </Text>
+            <Textarea
+              value={protokollText()}
+              readOnly
+              autosize
+              minRows={4}
+              maxRows={14}
+              styles={{ input: { fontFamily: 'ui-monospace, monospace', fontSize: 12 } }}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          </>
+        )}
+      </Card>
 
       <Card withBorder mt="lg" padding="md">
         <Text fw={600} size="sm" mb={4}>

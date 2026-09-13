@@ -331,16 +331,96 @@ describe('renderPlan', () => {
     await expect(renderPlan([item()], { ...options, signal: controller.signal }))
       .rejects.toThrow('Job abgebrochen')
   })
+
+  /*
+   * Ein Lauf über 1854 Blöcke starb bei 339 an einem einzigen Block: espeak-ng
+   * gab auf, der Fehler riss den ganzen Durchlauf mit, und eine dreiviertel
+   * Stunde Arbeit war weg. Ein schlechter Block darf eine Lücke kosten, nicht
+   * das Stück.
+   */
+  describe('wenn ein Block nicht will', () => {
+    const kaputt = (schlecht: Set<number>) => {
+      let i = 0
+      return async () => {
+        const dran = i++
+        if (schlecht.has(dran)) throw new Error('Aborted()')
+        return { samples: tone(1000), sampleRate: RATE, fromCache: false }
+      }
+    }
+
+    it('macht weiter und hinterlässt eine kurze Pause', async () => {
+      const gap = Math.trunc((RATE * 450) / 1000)
+      const pause = Math.trunc((RATE * 400) / 1000)
+      const { samples, stats, problems, message } = await renderPlan(
+        [item(), item({ page: 12 }), item()],
+        { ...options, render: kaputt(new Set([1])) },
+      )
+      expect(stats).toMatchObject({ rendered: 2, failed: 1 })
+      expect(samples.length).toBe(2 * (1000 + gap) + pause)
+      expect(problems).toEqual(['HUGO (S. 12): Aborted()'])
+      expect(message).toContain('1 Block übersprungen')
+    })
+
+    it('schreibt ins Protokoll, was zum Nachstellen nötig ist', async () => {
+      const zeilen: string[] = []
+      await renderPlan(
+        [item({ page: 7, blockId: 'b-42', request: { ...request, text: 'Ja – und?' } })],
+        { ...options, render: kaputt(new Set([0])), note: (t) => zeilen.push(t) },
+      )
+      expect(zeilen).toHaveLength(1)
+      expect(zeilen[0]).toContain('HUGO')
+      expect(zeilen[0]).toContain('S. 7')
+      expect(zeilen[0]).toContain('b-42')
+      expect(zeilen[0]).toContain('Aborted()')
+      // Das geschützte Leerzeichen sieht man dem Text nicht an.
+      expect(zeilen[0]).toContain('U+00A0')
+    })
+
+    it('gibt auf, wenn gar nichts mehr geht', async () => {
+      const viele = Array.from({ length: 30 }, () => item())
+      await expect(
+        renderPlan(viele, { ...options, render: kaputt(new Set(viele.map((_, i) => i))) }),
+      ).rejects.toThrow('8 Blöcke hintereinander')
+    })
+
+    it('zählt den Zähler zurück, sobald wieder einer gelingt', async () => {
+      const dreissig = Array.from({ length: 30 }, () => item())
+      // Jeder zweite geht schief – nie acht hintereinander.
+      const { stats } = await renderPlan(dreissig, {
+        ...options,
+        render: kaputt(new Set(dreissig.map((_, i) => i).filter((i) => i % 2 === 0))),
+      })
+      expect(stats.failed).toBe(15)
+      expect(stats.rendered).toBe(15)
+    })
+
+    it('lässt einen Abbruch Abbruch bleiben', async () => {
+      const controller = new AbortController()
+      await expect(
+        renderPlan([item(), item()], {
+          ...options,
+          signal: controller.signal,
+          render: async () => {
+            controller.abort()
+            throw new DOMException('Job abgebrochen', 'AbortError')
+          },
+        }),
+      ).rejects.toThrow('Job abgebrochen')
+    })
+  })
 })
 
 describe('doneMessage', () => {
   it('formuliert wie das Backend', () => {
-    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 0, fixedPauses: 0 }))
+    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 0, fixedPauses: 0, failed: 0 }))
       .toBe('Fertig – 3 neu erzeugt, 4 aus dem Zwischenspeicher')
-    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 2, fixedPauses: 0 }))
+    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 2, fixedPauses: 0, failed: 0 }))
       .toBe('Fertig – 3 neu erzeugt, 4 aus dem Zwischenspeicher, 2 Repliken als Pause')
-    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 2, fixedPauses: 1 }))
+    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 2, fixedPauses: 1, failed: 0 }))
       .toBe('Fertig – 3 neu erzeugt, 4 aus dem Zwischenspeicher, 2 Repliken als Pause'
         + ' (davon 1 mit fester Länge, weil der Rolle keine Stimme zugewiesen ist)')
+    // Ein übersprungener Block darf nicht verschwiegen werden.
+    expect(doneMessage({ rendered: 3, cached: 4, skippedRole: 0, fixedPauses: 0, failed: 2 }))
+      .toBe('Fertig – 3 neu erzeugt, 4 aus dem Zwischenspeicher, 2 Blöcke übersprungen')
   })
 })

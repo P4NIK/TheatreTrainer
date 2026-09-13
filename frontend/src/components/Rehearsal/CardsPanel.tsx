@@ -45,6 +45,7 @@ import {
   sessionQueue,
   type DeckFilter,
 } from '../../lib/cards'
+import { log } from '../../lib/protokoll'
 import { upcomingBlockIDs, type Step } from '../../lib/rehearsal'
 import { store } from '../../lib/store'
 import {
@@ -279,6 +280,10 @@ export default function CardsPanel({
     setStarting(true)
     try {
       await onBeforeStart()
+      log(
+        `Karteikarten gestartet: ${queue.length} Karten, Stichwort ${cueCount}, ` +
+          `Rolle „${role || 'keine'}“, Stück „${project.name}“`,
+      )
       // Ein gemerkter Schalter lädt nichts beim Öffnen des Reiters – die
       // 200 MB kommen erst, wenn wirklich eine Sitzung beginnt.
       if (options.analyze && !stt.ready) await stt.load()

@@ -579,6 +579,30 @@ aufgelöst: `"./"` heißt dort `https://p4nik.github.io/`, und genau die landete
 dann auf dem Home-Bildschirm. Es gibt hier deshalb kein `id` – ohne die Angabe
 gilt `start_url`, und das ist die richtige Adresse.
 
+### Das Protokoll des letzten Laufs
+
+Anlass war ein Fehlerbericht, mit dem niemand etwas anfangen konnte:
+`espeak-ng: Aborted()`, `339/1854 – 109 neu`, `Synthese fehlgeschlagen`. Darin
+fehlte alles, was die Ursache verraten hätte – welcher Block, welcher Text, und
+vor allem: der wievielte Aufruf des Phonemisierers das war. Genau diese Zahl
+war die Antwort.
+
+Deshalb schreibt jeder Lauf jetzt mit (`lib/protokoll.ts`), und zwar wenige,
+aber die richtigen Zeilen:
+
+- der Anfang mit Umfang, Auswahl, Schaltern und Stück
+- jeder 25. Block mit „neu“ und „aus dem Zwischenspeicher“
+- jede Auffrischung des Phonemisierers, mit Aufrufen und Sätzen
+- jeder gescheiterte Block: Nummer, Sprecher, Seite, Kennung, Länge, Textprobe,
+  auffällige Zeichen (`U+00A0` und Verwandte, die man einem Text nicht ansieht)
+  und der Fehler im Wortlaut
+- das Ende mit der Zusammenfassung
+
+Das Ganze liegt als Ringpuffer (300 Zeilen) im `localStorage`, überlebt also
+einen Absturz, steht in der Technik-Prüfung unter *Letzter Lauf* zum Kopieren
+und hängt unten am Bericht. Geschrieben wird gesammelt, höchstens einmal pro
+Sekunde – bei einem Absturz fehlt damit höchstens die letzte Sekunde.
+
 ### Technik-Prüfung
 
 Unter der Stückeliste steht *Läuft alles auf diesem Gerät?* (`#/technik`). Die
@@ -643,6 +667,24 @@ Tempo, nicht über die Stimme.
 Hörfassung im Arbeitsspeicher; seit sie laufend auf die Platte geschrieben wird
 (siehe oben), sollte es nicht mehr vorkommen. Die Technik-Prüfung sagt unter
 *Lange Aufnahmen*, ob dieser Browser das kann.
+
+**„Synthese fehlgeschlagen: Aborted()“ mitten in einem langen Stück** – das war
+espeak-ng, und der Grund ist eine Eigenheit des WASM-Moduls: `callMain` ruft
+ein `main()` auf, das nie dafür gebaut wurde, hundertmal zu laufen. Jeder
+Aufruf lässt etwas liegen; nach ungefähr 330 „Einheiten“ (ein Aufruf zählt wie
+1,8, ein Satz wie 1) ist Schluss, und dann kommt `Aborted()`, „memory access
+out of bounds“ oder „null function or function signature mismatch“ – je nach
+Tageslaune, und danach ist das Modul endgültig hin. Gemessen in Chromium: tot
+nach 120 Aufrufen mit je einem Satz, nach 49 mit je fünf. Ein Bericht über
+1854 Blöcke starb bei Block 339, nach **109 neu erzeugten** – genau dort.
+
+Behoben in `lib/piper.ts`: Der Phonemisierer wird planmäßig nach 20 Aufrufen
+oder 50 Sätzen weggeworfen und neu aufgebaut (35 ms, bei 1854 Blöcken also
+drei Sekunden). Geht trotzdem etwas schief, wird einmal mit frischem Modul
+wiederholt; erst wenn auch das scheitert, liegt es wirklich am Text. Zusätzlich
+gilt jetzt: Ein Block, den Piper nicht erzeugen kann, kostet eine kurze Lücke
+und einen Eintrag in der Mängelliste – nicht den ganzen Lauf. Erst acht
+Fehlschläge hintereinander brechen ab.
 
 **Die Auswertung lädt und lädt** – das Whisper-Modell sind rund 200 MB. Bricht
 der Download ab, sagt es der Satz unter dem Schalter; ein zweiter Klick nimmt

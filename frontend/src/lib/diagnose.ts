@@ -778,7 +778,7 @@ export function restartCheck(now = new Date(), log = readLog()): Check {
 /* ------------------------------------------------------------------ bericht */
 
 /** The whole report as text, for pasting into a message. */
-export function reportText(checks: Check[], now = new Date()): string {
+export function reportText(checks: Check[], now = new Date(), protokoll = ''): string {
   const zeichen: Record<CheckStatus, string> = { ok: '[ok]', warn: '[!]', fail: '[X]' }
   const lines = [
     `Theater-Vorleser · Technik-Prüfung · ${now.toLocaleString('de-DE')}`,
@@ -788,6 +788,17 @@ export function reportText(checks: Check[], now = new Date()): string {
   for (const check of checks) {
     lines.push(`${zeichen[check.status]} ${check.title}: ${check.detail}`)
     if (check.advice) lines.push(`      → ${check.advice}`)
+  }
+  /*
+   * Das Protokoll gehört in denselben Text.
+   *
+   * Ein Bericht wird weitergeschickt, wenn etwas schiefging – und dann ist
+   * die Frage nie „welcher Haken ist rot“, sondern „was hat der Lauf getan,
+   * bevor er starb“. Die letzten Zeilen reichen dafür; der ganze Ringpuffer
+   * wäre eine Textwand.
+   */
+  if (protokoll.trim() !== '') {
+    lines.push('', '--- Letzter Lauf ---', protokoll.trim())
   }
   return lines.filter((line) => line !== undefined).join('\n')
 }

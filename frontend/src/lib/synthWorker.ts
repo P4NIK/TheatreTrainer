@@ -13,10 +13,16 @@
  * other block.
  */
 
-import { configure, loadVoice, type Voice } from './piper'
+import { configure, loadVoice, onNote, type Voice } from './piper'
 import type { FromWorker, ToWorker } from './synth'
 
 const voices = new Map<string, Voice>()
+
+/*
+ * Was der Phonemisierer zu melden hat, gehört ins Protokoll – und das liegt
+ * im localStorage, den ein Worker nicht hat. Also wird es hinübergereicht.
+ */
+onNote((note) => reply({ id: 0, type: 'note', kind: note.kind, text: note.text }))
 
 self.onmessage = async (event: MessageEvent<ToWorker>) => {
   const message = event.data

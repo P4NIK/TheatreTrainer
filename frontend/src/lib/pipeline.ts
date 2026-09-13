@@ -22,6 +22,7 @@
 import type { Block, Project, SelectionItem, Speakers } from '../types'
 import { DIRECTION_KEY } from '../types'
 import { pcmBytes, resample, silence } from './audio'
+import { auffaellig, probe } from './protokoll'
 
 /** Everything Piper needs for one block. Mirrors synth.Request. */
 export interface SynthRequest {
@@ -48,6 +49,9 @@ export interface PlanItem {
   fixedPause: boolean
   /** Speaker name for progress and error messages. */
   label: string
+  /** Woher der Block stammt – nur fürs Protokoll, wenn etwas schiefgeht. */
+  blockId?: string
+  page?: number
 }
 
 export interface Plan {
@@ -296,6 +300,8 @@ export interface RunStats {
   skippedRole: number
   /** Of those, the ones with no voice at all, where the pause has a fixed length. */
   fixedPauses: number
+  /** Blöcke, die Piper nicht erzeugen konnte – sie stehen als kurze Pause drin. */
+  failed: number
 }
 
 export interface RenderedBlock {
@@ -313,6 +319,8 @@ export interface RenderPlanOptions {
   skippedRoleMs: number
   render: (request: SynthRequest) => Promise<RenderedBlock>
   onProgress?: (progress: { done: number; total: number; message: string } & RunStats) => void
+  /** Eine Zeile fürs Protokoll – siehe protokoll.ts. */
+  note?: (text: string) => void
   signal?: AbortSignal
   /**
    * Where the samples go while the run is still going.
@@ -332,8 +340,23 @@ export function doneMessage(stats: RunStats): string {
   if (stats.fixedPauses > 0) {
     message += ` (davon ${stats.fixedPauses} mit fester Länge, weil der Rolle keine Stimme zugewiesen ist)`
   }
+  if (stats.failed > 0) {
+    message += `, ${stats.failed} ${stats.failed === 1 ? 'Block' : 'Blöcke'} übersprungen`
+  }
   return message
 }
+
+/**
+ * So viele Blöcke dürfen hintereinander scheitern, bevor der Lauf aufgibt.
+ *
+ * Ein einzelner schlechter Block soll eine dreiviertel Stunde Arbeit nicht
+ * wegwerfen – aber wenn nichts mehr geht, ist Weitermachen auch keine Hilfe:
+ * Am Ende stünde eine Stunde Stille.
+ */
+const MAX_IN_FOLGE = 8
+
+/** Wie lang die Lücke ist, die ein gescheiterter Block hinterlässt. */
+const FEHLER_PAUSE_MS = 400
 
 function concat(parts: Int16Array[], total: number): Int16Array {
   const out = new Int16Array(total)
@@ -355,7 +378,14 @@ function concat(parts: Int16Array[], total: number): Int16Array {
 export async function renderPlan(
   items: PlanItem[],
   options: RenderPlanOptions,
-): Promise<{ samples: Int16Array; sampleCount: number; stats: RunStats; message: string }> {
+): Promise<{
+  samples: Int16Array
+  sampleCount: number
+  stats: RunStats
+  message: string
+  /** Blöcke, die nicht erzeugt werden konnten, mit Grund. */
+  problems: string[]
+}> {
   const { sampleRate, render, sink } = options
   const gap = silence(options.gapMs, sampleRate)
   const skipPause = silence(options.skippedRoleMs, sampleRate)
@@ -368,7 +398,9 @@ export async function renderPlan(
     else parts.push(part)
   }
 
-  const stats: RunStats = { rendered: 0, cached: 0, skippedRole: 0, fixedPauses: 0 }
+  const stats: RunStats = { rendered: 0, cached: 0, skippedRole: 0, fixedPauses: 0, failed: 0 }
+  const problems: string[] = []
+  let nacheinander = 0
 
   for (let i = 0; i < items.length; i++) {
     if (options.signal?.aborted) throw new DOMException('Job abgebrochen', 'AbortError')
@@ -384,7 +416,47 @@ export async function renderPlan(
     }
     if (!item.request) continue
 
-    const block = await render(item.request)
+    /*
+     * Ein Block, der nicht will, kostet eine Lücke – nicht den Lauf.
+     *
+     * Vorher riss der erste Fehler alles mit: 1854 Blöcke, nach 339 ein
+     * `Aborted()` aus espeak-ng, und die dreiviertel Stunde war weg. Jetzt
+     * steht an seiner Stelle eine kurze Pause, der Grund geht ins Protokoll
+     * und in die Mängelliste, und der Rest des Stücks wird trotzdem fertig.
+     */
+    let block: RenderedBlock
+    try {
+      block = await render(item.request)
+      nacheinander = 0
+    } catch (error) {
+      if (options.signal?.aborted) throw error
+      const grund = error instanceof Error ? error.message : String(error)
+      const wo = item.page ? `S. ${item.page}` : `Block ${i + 1}`
+      problems.push(`${item.label} (${wo}): ${grund}`)
+      // Alles, was man zum Nachstellen braucht: wo, wer, wie lang, wie es
+      // anfängt – und ob etwas Unsichtbares im Text steht.
+      const seltsam = auffaellig(item.request.text)
+      options.note?.(
+        `Block ${i + 1}/${items.length} gescheitert · ${item.label} · ${wo} · ` +
+          `${item.blockId ?? 'ohne Kennung'} · ${item.request.text.length} Zeichen · ` +
+          `„${probe(item.request.text)}“${seltsam ? ` · Sonderzeichen: ${seltsam}` : ''} · ${grund}`,
+      )
+      await push(silence(FEHLER_PAUSE_MS, sampleRate))
+      stats.failed++
+      nacheinander++
+      if (nacheinander >= MAX_IN_FOLGE) {
+        throw new Error(
+          `${nacheinander} Blöcke hintereinander fehlgeschlagen – zuletzt ${item.label} (${wo}): ${grund}`,
+        )
+      }
+      options.onProgress?.({
+        done: i + 1,
+        total: items.length,
+        message: `${i + 1}/${items.length} – ${stats.failed} übersprungen`,
+        ...stats,
+      })
+      continue
+    }
     if (block.fromCache) stats.cached++
     else stats.rendered++
 
@@ -412,5 +484,6 @@ export async function renderPlan(
     sampleCount: total,
     stats,
     message: doneMessage(stats),
+    problems,
   }
 }

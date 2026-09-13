@@ -38,6 +38,7 @@ import {
   readSelection,
   type SelectionSettings,
 } from '../../lib/selection'
+import { log } from '../../lib/protokoll'
 import { store } from '../../lib/store'
 import {
   anchorAt,
@@ -275,6 +276,11 @@ export default function RehearsalPanel({
     setStarting(true)
     try {
       await onBeforeStart()
+      log(
+        `Lernmodus gestartet: ${stats.total} Schritte ab ${at + 1}, Rolle „${role || 'keine'}“, ` +
+          `${options.record ? 'mit Mitschnitt' : 'ohne Mitschnitt'}` +
+          `${options.analyze ? ' und Auswertung' : ''}, Stück „${project.name}“`,
+      )
       if (options.analyze && !stt.ready) await stt.load()
       setRunIndex(at)
       setRunning(true)
